@@ -10,7 +10,7 @@ const API = (import.meta.env.VITE_API || '') + '/api/feed';
 function Skeleton() {
   return (
     <div className="page">
-      <header className="top"><div className="brand"><span className="logo">T</span><span className="word">тренды</span></div></header>
+      <header className="top"><div className="brand"><span className="logo">S</span><span className="word">scroll</span></div></header>
       <div className="stories">{[0, 1, 2, 3, 4].map(i => <span key={i} className="sk sk-story" />)}</div>
       <div className="masonry">{[0, 1].map(c => <div key={c} className="mcol">{[0, 1, 2].map(i => <span key={i} className="sk sk-card" style={{ aspectRatio: `1 / ${(c + i) % 2 ? 1.6 : 1.15}` }} />)}</div>)}</div>
     </div>
@@ -67,7 +67,7 @@ export default function App() {
   const go = id => { setChannel(null); setNav(id); window.scrollTo(0, 0); };
 
   if (!data) return error
-    ? <div className="splash"><div className="logo xl">T</div><b>{error}</b><p>Проверь интернет и попробуй ещё раз</p><button className="btn btn-grad" onClick={load}><I.refresh width="18" height="18" />Повторить</button></div>
+    ? <div className="splash"><div className="logo xl">S</div><b>{error}</b><p>Проверь интернет и попробуй ещё раз</p><button className="btn btn-grad" onClick={load}><I.refresh width="18" height="18" />Повторить</button></div>
     : <div className="app"><Skeleton /></div>;
 
   const ch = channel && chMap[channel];

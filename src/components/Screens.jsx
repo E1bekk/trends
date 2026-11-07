@@ -46,7 +46,7 @@ export function Home({ tab, setTab, cat, setCat, query, setQuery, items, onOpen,
   return (
     <div className="page">
       <header className="top">
-        <div className="brand"><span className="logo">T</span><span className="word">тренды</span></div>
+        <div className="brand"><span className="logo">S</span><span className="word">scroll</span></div>
         <button className={'icon-btn' + (search ? ' on' : '')} onClick={() => { setSearch(!search); if (search) setQuery(''); }}><I.search /></button>
       </header>
       {search && <label className="search"><I.search width="20" height="20" /><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Видео, каналы, темы…" />{query && <button onClick={() => setQuery('')}><I.close width="18" height="18" /></button>}</label>}

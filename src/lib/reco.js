@@ -11,9 +11,9 @@ const hours = iso => Math.max(0.5, (Date.now() - new Date(iso)) / 36e5);
 // Популярность: просмотры относительно обычного охвата канала + абсолютные просмотры + свежесть
 export function popularity(v, ch) {
   const rel = Math.min(3, v.views / Math.max(50, (ch && ch.reach) || v.views || 1)) / 3;
-  const abs = Math.log10(v.views + 10) / 6;
+  const abs = Math.log10(v.views + 10) / 6;          // большие каналы не должны забивать всю ленту
   const fresh = Math.exp(-hours(v.date) / 96);
-  return (0.55 * rel + 0.45 * abs) * (0.35 + 0.65 * fresh);
+  return (0.7 * rel + 0.3 * abs) * (0.35 + 0.65 * fresh);
 }
 // Тренды: кто быстрее всех набирает просмотры (просмотры в час)
 export function trending(videos) {
@@ -34,6 +34,7 @@ export function forYou(videos, chMap, seed = Date.now()) {
   const S = state(), r = rnd(seed), cold = S.events < 3;
   const scored = videos.map(v => {
     let s = popularity(v, chMap[v.channel]);
+    if (v.cat === 'news') s *= 0.6;                       // новости — в своём разделе, в «Для вас» их меньше
     if (!cold) s *= 1 + 1.6 * taste(v);
     const seen = S.seen[v.key];
     if (seen) s *= 0.15 + Math.min(0.5, (Date.now() - seen) / 864e5 / 4);   // просмотренное — вниз
@@ -44,9 +45,10 @@ export function forYou(videos, chMap, seed = Date.now()) {
   while (rest.length) {
     let pick = 0;
     if (!cold && explore.length && r() < 0.15) { const e = explore.splice(Math.floor(r() * explore.length), 1)[0]; pick = rest.indexOf(e); if (pick < 0) pick = 0; }
-    // не два ролика одного канала подряд
-    const last = out[out.length - 1];
-    if (last && rest[pick].v.channel === last.channel) { const j = rest.findIndex(x => x.v.channel !== last.channel); if (j > 0) pick = j; }
+    // разнообразие: не два ролика одного канала подряд и не больше одной новости из трёх
+    const last = out[out.length - 1], recentNews = out.slice(-2).some(x => x.cat === 'news');
+    const bad = x => (last && x.v.channel === last.channel) || (recentNews && x.v.cat === 'news');
+    if (bad(rest[pick])) { const j = rest.findIndex(x => !bad(x)); if (j > 0) pick = j; }
     out.push(rest.splice(pick, 1)[0].v);
   }
   return out;
