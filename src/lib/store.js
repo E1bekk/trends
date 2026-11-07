@@ -1,69 +1,79 @@
-// Что человек делает в приложении: лайки, сохранённое, подписки и «как смотрит».
-// В прототипе хранится на телефоне; в рабочей версии будет в базе (Supabase), привязано к Telegram ID.
-const KEY = 'trends.v1';
-const empty = () => ({ likes: [], saves: [], follows: [], watch: {}, chan: {}, cat: {}, seen: {}, events: 0 });
-let S = empty();
-try { S = Object.assign(empty(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+// Лайки и сохранённое живут на сервере, но кнопка должна срабатывать мгновенно.
+// Поэтому здесь мы держим «поправки»: нажал — сразу видно, а на сервер уходит следом.
+// Просмотры копятся и отправляются пачкой раз в несколько секунд.
+import { sendEvents, follow as apiFollow } from './api';
+
+const patch = new Map();        // id ролика → { liked, saved, likes, saves }
+let queue = [];                 // события, ещё не ушедшие на сервер
 const subs = new Set();
-// запись в память телефона — не сразу, а пачкой (JSON.stringify на каждый свайп тормозит ленту)
-let timer = 0;
-const persist = () => {
-  clearTimeout(timer);
-  timer = setTimeout(() => {
-    const keys = Object.keys(S.seen);
-    if (keys.length > 3000) keys.sort((a, b) => S.seen[a] - S.seen[b]).slice(0, keys.length - 3000).forEach(k => { delete S.seen[k]; delete S.watch[k]; });
-    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
-  }, 1500);
-};
-// ui = true — изменилось то, что видно на экране (лайк, сохранение, подписка): тогда перерисовываем
-const save = (ui = true) => { persist(); if (ui) subs.forEach(f => f()); };
-if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { clearTimeout(timer); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} });
+let timer = 0, sending = false;
+
 export const onChange = f => { subs.add(f); return () => subs.delete(f); };
-export const state = () => S;
+const ping = () => subs.forEach(f => f());
 
-// Вес сигналов: насколько сильно действие говорит «мне это интересно»
-const W = { like: 3, unlike: -3, save: 4, unsave: -2, follow: 6, unfollow: -4, share: 3, full: 2, half: 0.8, skip: -1, open: 0.5 };
-
-// интерес к каналу и категории, со «старением»: старые сигналы весят меньше
-function bump(v, w) {
-  const k = 0.97;
-  for (const m of [S.chan, S.cat]) for (const x in m) m[x] *= k;
-  S.chan[v.channel] = (S.chan[v.channel] || 0) + w;
-  if (v.cat) S.cat[v.cat] = (S.cat[v.cat] || 0) + w * 0.5;
-  S.events++;
+// как ролик выглядит с учётом ещё не доехавших до сервера нажатий
+export function withPatch(v) {
+  const p = patch.get(v.id);
+  return p ? { ...v, ...p } : v;
 }
-export const isLiked = k => S.likes.includes(k);
-export const isSaved = k => S.saves.includes(k);
-export const isFollowing = u => S.follows.includes(u);
+export const isLiked = v => { const p = patch.get(v.id); return p && p.liked !== undefined ? p.liked : !!v.liked; };
+export const isSaved = v => { const p = patch.get(v.id); return p && p.saved !== undefined ? p.saved : !!v.saved; };
+
+function setPatch(v, extra) {
+  patch.set(v.id, { ...(patch.get(v.id) || {}), ...extra });
+  if (patch.size > 2000) patch.delete(patch.keys().next().value);
+  ping();
+}
+
+export function push(e) {
+  queue.push(e);
+  if (queue.length > 200) queue = queue.slice(-200);
+  if (!timer) timer = setTimeout(flush, 5000);
+}
+
+export async function flush() {
+  clearTimeout(timer); timer = 0;
+  if (sending || !queue.length) return;
+  const batch = queue.slice(0, 50);
+  queue = queue.slice(50);
+  sending = true;
+  try { await sendEvents(batch); }
+  catch (e) { queue = batch.concat(queue).slice(-200); }   // не дошло — попробуем позже
+  finally { sending = false; if (queue.length && !timer) timer = setTimeout(flush, 5000); }
+}
 
 export function toggleLike(v) {
-  const on = !isLiked(v.key);
-  S.likes = on ? [v.key, ...S.likes] : S.likes.filter(x => x !== v.key);
-  bump(v, on ? W.like : W.unlike); save(); return on;
+  const on = !isLiked(v);
+  setPatch(v, { liked: on, likes: Math.max(0, (withPatch(v).likes || 0) + (on ? 1 : -1)) });
+  push({ v: v.id, kind: 'like', on });
+  return on;
 }
 export function toggleSave(v) {
-  const on = !isSaved(v.key);
-  S.saves = on ? [v.key, ...S.saves] : S.saves.filter(x => x !== v.key);
-  bump(v, on ? W.save : W.unsave); save(); return on;
+  const on = !isSaved(v);
+  setPatch(v, { saved: on, saves: Math.max(0, (withPatch(v).saves || 0) + (on ? 1 : -1)) });
+  push({ v: v.id, kind: 'save', on });
+  return on;
 }
-export function toggleFollow(username, cat) {
-  const on = !isFollowing(username);
-  S.follows = on ? [username, ...S.follows] : S.follows.filter(x => x !== username);
-  bump({ channel: username, cat }, on ? W.follow : W.unfollow); save(); return on;
+export function shared(v) { push({ v: v.id, kind: 'share' }); }
+
+// подписка на автора: тоже сначала на экране, потом на сервере
+const follows = new Map();
+export const isFollowing = v => (follows.has(v.author) ? follows.get(v.author) : !!v.following);
+export async function toggleFollow(v) {
+  const on = !isFollowing(v);
+  follows.set(v.author, on); ping();
+  try { await apiFollow(v.author); }
+  catch (e) { follows.set(v.author, !on); ping(); }      // не прошло — возвращаем как было
+  return on;
 }
-export function shared(v) { bump(v, W.share); save(false); }
-// Сколько досмотрел: досмотрел почти до конца — плюс, пролистал за 2 секунды — минус
-export function watched(v, seconds) {
-  if (!v || seconds < 0.3) return;
-  const ratio = Math.min(1, seconds / Math.max(1, v.duration));
-  const w = ratio >= 0.8 ? W.full : ratio >= 0.35 ? W.half : seconds < 2.5 ? W.skip : 0;
-  const prev = S.watch[v.key] || { t: 0, n: 0 };
-  S.watch[v.key] = { t: Math.max(prev.t, seconds), r: Math.max(prev.r || 0, ratio), n: prev.n + 1, at: Date.now() };
-  S.seen[v.key] = Date.now();
-  if (w) bump(v, w);
-  save(false);
+// сколько досмотрел: главный сигнал для ленты
+export function watched(v, sec) {
+  if (!v || sec < 0.3) return;
+  push({ v: v.id, kind: 'watch', sec: Math.round(sec * 10) / 10, ratio: Math.min(1, sec / Math.max(1, v.duration || 1)) });
 }
-export function resetTaste() {
-  const keep = { likes: S.likes, saves: S.saves, follows: S.follows };
-  S = Object.assign(empty(), keep); save();
+
+if (typeof window !== 'undefined') {
+  // уходит из приложения — досылаем, что накопилось
+  window.addEventListener('pagehide', () => { try { flush(); } catch (e) {} });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
 }

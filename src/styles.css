@@ -399,3 +399,24 @@ h1, h2, h3 { margin: 0; }
 .slide-progress.stall i { position: relative; transform: none !important; width: 30%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .9), transparent); animation: stall .9s linear infinite; }
 @keyframes stall { from { left: -30%; } to { left: 100%; } }
 .slide-video { background: transparent; }
+
+/* ===== новое: автор мелкой строкой, вайб, меню из трёх кнопок ===== */
+.slide-author { font-size: 12.5px; font-weight: 700; color: rgba(255, 255, 255, .78); letter-spacing: .2px; }
+
+.feed-btn.on { background: var(--aurora); }
+.vibe-em { font: 700 17px/1 sans-serif; }
+.vibe-row { position: absolute; z-index: 4; top: calc(46px + var(--safe-t)); left: 0; right: 0;
+  display: flex; gap: 7px; overflow-x: auto; padding: 0 10px 2px; scrollbar-width: none; animation: enter .2s; }
+.vibe-row::-webkit-scrollbar { display: none; }
+.vibe-row button { flex: none; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 800;
+  background: rgba(0, 0, 0, .55); border: 1px solid rgba(255, 255, 255, .16); color: #fff; white-space: nowrap; }
+.vibe-row button.on { background: var(--aurora); border-color: transparent; }
+
+.tabbar.tabbar-3 { grid-template-columns: 1fr 72px 1fr; }
+
+.vibe-box { margin: 14px 0 4px; }
+.vibe-title { display: block; padding: 0 16px 8px; font: 800 13px/1 var(--display); color: var(--muted); }
+.pname { display: block; text-align: center; margin-top: 10px; font: 800 19px/1.2 var(--display); }
+.plevel { display: block; text-align: center; margin-top: 5px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.hint { margin: 12px 20px; text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.sk-card { display: block; }

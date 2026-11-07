@@ -22,3 +22,17 @@ export const catName = c => (CATS[c] || ['Видео'])[0];
 export const catEmoji = c => (CATS[c] || ['', '✨'])[1];
 export const catColor = c => (CATS[c] || ['', '', '#8b5cff'])[2];
 export const COUNTRIES = { kg: '🇰🇬', kz: '🇰🇿', uz: '🇺🇿', tj: '🇹🇯', ru: '🇷🇺', world: '🌍' };
+
+// Человеческие названия тем, которые сборщик проставляет роликам
+export const TAGS = {
+  koty: ['Коты', '🐱'], sobaki: ['Собаки', '🐶'], zhivotnye: ['Животные', '🐾'], fail: ['Фейлы', '🙃'],
+  mem: ['Мемы', '😂'], tanec: ['Танцы', '💃'], muzyka: ['Музыка', '🎵'], futbol: ['Футбол', '⚽'],
+  mma: ['Бои', '🥊'], sport_other: ['Спорт', '🏅'], igry: ['Игры', '🎮'], cs: ['CS2', '🔫'],
+  dota: ['Dota 2', '🗡️'], pubg: ['PUBG', '🪖'], mlbb: ['Mobile Legends', '⚔️'], fortnite: ['Fortnite', '🛠️'],
+  roblox: ['Roblox', '🧱'], brawl: ['Brawl Stars', '💥'], valorant: ['Valorant', '🎯'],
+  avto: ['Авто', '🏎️'], eda: ['Еда', '🍜'], lajfhak: ['Лайфхаки', '💡'], deti: ['Дети', '🧒'],
+  priroda: ['Природа', '🌿'], zalip: ['Залипательное', '🌀'], strakh: ['Страшное', '👻'],
+  milo: ['Милое', '🥰'], tryuk: ['Трюки', '🛹'], rozygrysh: ['Розыгрыши', '🎭'],
+  stendap: ['Стендап', '🎤'], tehnika: ['Техника', '🤖']
+};
+export const tagLabel = t => TAGS[t] || (CATS[t] ? [CATS[t][0], CATS[t][1]] : [t, '✨']);

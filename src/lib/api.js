@@ -1,0 +1,32 @@
+// Связь с нашим сервером. Подпись Telegram уходит заголовком — по ней сервер понимает, кто пришёл.
+import { tg } from './tg';
+
+const sign = () => (tg && tg.initData) || '';
+
+async function call(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { 'X-Init-Data': sign(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) }
+  });
+  if (!r.ok) {
+    let msg = 'HTTP ' + r.status;
+    try { const j = await r.json(); if (j && j.error) msg = j.error; } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+// порция ленты: mode — foryou | trends | fresh | follow, vibe — тема или пусто
+export const getFeed = ({ mode = 'foryou', vibe = '', limit = 20, skip = 0 } = {}) =>
+  call(`/api/next?mode=${mode}&limit=${limit}&skip=${skip}${vibe ? '&vibe=' + vibe : ''}`);
+
+export const sendEvents = events =>
+  call('/api/event', { method: 'POST', body: JSON.stringify({ events }) });
+
+export const getMine = ({ kind = 'save', limit = 30, skip = 0 } = {}) =>
+  call(`/api/my?kind=${kind}&limit=${limit}&skip=${skip}`);
+
+export const getProfile = () => call('/api/my?what=profile');
+
+export const follow = author =>
+  call('/api/my', { method: 'POST', body: JSON.stringify({ follow: author }) });
