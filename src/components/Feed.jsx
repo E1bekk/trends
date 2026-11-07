@@ -177,7 +177,6 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
       ) : (
         <div className="feed-empty"><div className="empty-emoji">👀</div><b>Пока пусто</b><p>{mode === 'follow' ? 'Подпишись на каналы кнопкой «+» у аватара — их ролики будут здесь.' : 'Ролики скоро появятся.'}</p></div>
       )}
-      {muted && list.length > 0 && !paused && <button className="feed-hint" onClick={unmuteNow}><I.sound width="15" height="15" />Коснись для звука</button>}
     </div>
   );
 }
