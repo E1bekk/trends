@@ -4,6 +4,7 @@ import { I, Avatar } from './Icons';
 import { fmt, dur, ago, CATS, catName, catEmoji, catColor, COUNTRIES } from '../lib/format';
 import * as St from '../lib/store';
 import { openTg, tgUser } from '../lib/tg';
+import { forYou, trending } from '../lib/reco';
 
 // ---------- плитка в два столбца (как Explore в Instagram / Pinterest) ----------
 export function Masonry({ items, onOpen, hot, empty, small }) {
@@ -38,26 +39,40 @@ export const Empty = ({ emoji, title, text, action }) => (
   <div className="empty"><div className="empty-emoji">{emoji}</div><b>{title}</b>{text && <p>{text}</p>}{action}</div>
 );
 
-// ---------- главная ----------
-export function Home({ tab, setTab, cat, setCat, query, setQuery, items, onOpen, stories, chMap, onStory, hot, cats }) {
-  const [search, setSearch] = useState(!!query);
-  const tabs = [['foryou', 'Для вас'], ['trends', 'Тренды'], ['follow', 'Подписки']];
+// ---------- обзор: поиск, каналы-«истории», подборки, категории, плитка ----------
+export function Explore({ videos, chMap, onOpen, onStory }) {
+  const [tab, setTab] = useState('popular'), [cat, setCat] = useState('all'), [query, setQuery] = useState('');
+  const [seed] = useState(() => Date.now());
+  const tabs = [['popular', 'Популярное'], ['trends', 'Тренды'], ['new', 'Новое']];
   const ti = tabs.findIndex(t => t[0] === tab);
+  const hot = useMemo(() => new Set(trending(videos).slice(0, Math.max(6, Math.round(videos.length * 0.08))).map(v => v.key)), [videos]);
+  const cats = useMemo(() => { const m = {}; videos.forEach(v => { m[v.cat] = (m[v.cat] || 0) + 1; }); return Object.keys(m).sort((a, b) => m[b] - m[a]); }, [videos]);
+  const items = useMemo(() => {
+    let list = tab === 'trends' ? trending(videos) : tab === 'new' ? videos.slice().sort((a, b) => new Date(b.date) - new Date(a.date)) : forYou(videos, chMap, seed);
+    if (cat !== 'all') list = list.filter(v => v.cat === cat);
+    const q = query.trim().toLowerCase();
+    if (q) list = list.filter(v => (v.text || '').toLowerCase().includes(q) || ((chMap[v.channel] || {}).title || '').toLowerCase().includes(q));
+    return list;
+  }, [videos, chMap, tab, cat, query, seed]);
+  // «истории»: сначала свои подписки, потом каналы с самыми горячими роликами
+  const stories = useMemo(() => {
+    const S = St.state(), seen = new Set(), out = [];
+    const push = u => { if (!seen.has(u) && chMap[u]) { seen.add(u); out.push({ username: u, seen: videos.filter(v => v.channel === u).every(v => S.seen[v.key]) }); } };
+    S.follows.forEach(push); trending(videos).forEach(v => push(v.channel));
+    return out.slice(0, 14);
+  }, [videos, chMap]);
   return (
     <div className="page">
-      <header className="top">
-        <div className="brand"><span className="logo">S</span><span className="word">scroll</span></div>
-        <button className={'icon-btn' + (search ? ' on' : '')} onClick={() => { setSearch(!search); if (search) setQuery(''); }}><I.search /></button>
-      </header>
-      {search && <label className="search"><I.search width="20" height="20" /><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Видео, каналы, темы…" />{query && <button onClick={() => setQuery('')}><I.close width="18" height="18" /></button>}</label>}
-      <div className="stories">
+      <header className="top"><div className="brand"><span className="logo">S</span><span className="word">scroll</span></div></header>
+      <label className="search"><I.search width="20" height="20" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Видео, каналы, темы…" />{query && <button onClick={() => setQuery('')}><I.close width="18" height="18" /></button>}</label>
+      {!query && <div className="stories">
         {stories.map(s => (
           <button key={s.username} className="story" onClick={() => onStory(s.username)}>
             <Avatar ch={chMap[s.username]} size={58} ring={s.seen ? 'seen' : 'on'} />
             <span>{(chMap[s.username] || {}).title || s.username}</span>
           </button>
         ))}
-      </div>
+      </div>}
       <div className="tabs" style={{ '--i': ti }}>
         {tabs.map(([id, t]) => <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{t}</button>)}
         <i className="tabs-ind" />
@@ -66,10 +81,8 @@ export function Home({ tab, setTab, cat, setCat, query, setQuery, items, onOpen,
         <button className={'chip' + (cat === 'all' ? ' on' : '')} onClick={() => setCat('all')}>✨ Всё</button>
         {cats.map(c => <button key={c} className={'chip' + (cat === c ? ' on' : '')} style={{ '--c': catColor(c) }} onClick={() => setCat(c)}>{catEmoji(c)} {catName(c)}</button>)}
       </div>
-      <Masonry items={items} onOpen={onOpen} hot={hot}
-        empty={tab === 'follow'
-          ? <Empty emoji="👀" title="Пока ни на кого не подписан" text="Нажимай 👁 «Отслеживать» на роликах и каналах — их новые видео будут здесь." />
-          : <Empty emoji="🔍" title="Ничего не нашлось" text="Попробуй другое слово или категорию." />} />
+      <Masonry items={items} onOpen={i => onOpen(items, i)} hot={hot}
+        empty={<Empty emoji="🔍" title="Ничего не нашлось" text="Попробуй другое слово или категорию." />} />
     </div>
   );
 }
