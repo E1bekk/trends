@@ -10,8 +10,11 @@ async function rest(path, { method = 'GET', body, prefer } = {}) {
   if (!ready()) throw new Error('База не настроена: нет SUPABASE_URL или SUPABASE_SERVICE_KEY');
   const r = await fetch(`${URL}/rest/v1/${path}`, {
     method,
+    // Ключи нового образца (sb_secret_...) — не JWT, и заголовок Authorization с ними
+    // некоторые версии шлюза отвергают. Старые ключи — JWT, им Authorization нужен.
     headers: {
-      apikey: KEY, Authorization: `Bearer ${KEY}`,
+      apikey: KEY,
+      ...(KEY.startsWith('sb_') ? {} : { Authorization: `Bearer ${KEY}` }),
       'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {})
     },
     body: body === undefined ? undefined : JSON.stringify(body)
@@ -40,13 +43,27 @@ async function upsertAll(table, rows, onConflict, size = 400) {
 }
 
 // Короткая проверка связи: сразу говорим, что не так, а не падаем на полпути
+// Как выглядит ключ — без самого ключа: по этому видно, тот ли вставили
+function keyInfo() {
+  if (!KEY) return 'ключ не задан';
+  const kind = KEY.startsWith('sb_secret_') ? 'секретный (sb_secret_)'
+    : KEY.startsWith('sb_publishable_') ? 'ПУБЛИЧНЫЙ (sb_publishable_) — нужен секретный!'
+    : KEY.startsWith('eyJ') ? 'старого образца (JWT)'
+    : 'непонятного вида';
+  return `ключ ${kind}, длина ${KEY.length}`;
+}
+
 async function check() {
   if (!URL) throw new Error('не задан SUPABASE_URL');
   if (!KEY) throw new Error('не задан SUPABASE_SERVICE_KEY');
   if (!/^https:\/\/[\w-]+\.supabase\.(co|in)$/.test(URL))
     throw new Error(`SUPABASE_URL выглядит странно: "${URL}". Ожидается вид https://xxxx.supabase.co`);
-  await select('authors', 'select=username&limit=1');
+  try {
+    await select('authors', 'select=username&limit=1');
+  } catch (e) {
+    throw new Error(`${e.message}\n  адрес: ${URL}\n  ${keyInfo()}`);
+  }
   return true;
 }
 
-module.exports = { ready, check, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
+module.exports = { ready, check, keyInfo, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
