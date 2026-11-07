@@ -3,6 +3,10 @@
 // Здесь всё это вырезается, остаётся только смысл. Плюс каждому видео проставляются
 // темы (по смыслу, а не по каналу), язык и ключ для склейки одинаковых репостов.
 
+// Обрезка строки, которая не ломает эмодзи пополам: считаем по символам, а не по байтам.
+// Половинка эмодзи — это не текст, и база такую запись не принимает вовсе.
+const cut = (s, n) => { const a = [...String(s || '')]; return a.length <= n ? a.join('') : a.slice(0, n).join(''); };
+
 // ---------- подпись ----------
 const PROMO = [
   /подпи[сш][а-я]*(сь|йся|ться|ка|ывайт)/i, /обуна бўл/i, /наш канал/i, /больше видео/i, /жми\s/i, /переходи/i,
@@ -26,7 +30,7 @@ function cleanCaption(raw) {
   // хвост из эмодзи-стрелок и разделителей
   t = t.replace(/[⬇️⬆️👇👆➡️⬅️🔽🔼▪️▫️•·|—–-]{2,}/g, ' ')
        .replace(/[ \t]{2,}/g, ' ').replace(/\n{2,}/g, '\n').trim();
-  return t.slice(0, 180);
+  return cut(t, 180);
 }
 // подпись осталась пустой или это была чистая реклама
 function isPromoOnly(raw, cleaned) {
@@ -105,4 +109,4 @@ function dupKey(duration, ratio, caption) {
   return words ? `${shape}:${words}` : `${shape}:~`;
 }
 
-module.exports = { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey, DICT };
+module.exports = { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey, cut, DICT };

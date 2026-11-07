@@ -6,6 +6,16 @@ const URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '').re
 const KEY = String(process.env.SUPABASE_SERVICE_KEY || '').trim();
 const ready = () => Boolean(URL && KEY);
 
+// Текст из интернета бывает битым: оборванные эмодзи и управляющие символы.
+// Postgres такую запись не принимает целиком, поэтому чистим перед отправкой.
+const BAD = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+function scrub(v) {
+  if (typeof v === 'string') return v.replace(BAD, '');
+  if (Array.isArray(v)) return v.map(scrub);
+  if (v && typeof v === 'object') { const o = {}; for (const k in v) o[k] = scrub(v[k]); return o; }
+  return v;
+}
+
 async function rest(path, { method = 'GET', body, prefer } = {}) {
   if (!ready()) throw new Error('База не настроена: нет SUPABASE_URL или SUPABASE_SERVICE_KEY');
   const r = await fetch(`${URL}/rest/v1/${path}`, {
@@ -17,7 +27,7 @@ async function rest(path, { method = 'GET', body, prefer } = {}) {
       ...(KEY.startsWith('sb_') ? {} : { Authorization: `Bearer ${KEY}` }),
       'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {})
     },
-    body: body === undefined ? undefined : JSON.stringify(body)
+    body: body === undefined ? undefined : JSON.stringify(scrub(body))
   });
   const text = await r.text();
   if (!r.ok) {
@@ -98,4 +108,4 @@ async function check() {
   return true;
 }
 
-module.exports = { ready, check, keyInfo, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
+module.exports = { ready, check, keyInfo, scrub, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
