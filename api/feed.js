@@ -1,0 +1,53 @@
+// Лента прототипа: берём свежие посты прямо с публичных страниц каналов (t.me/s/...).
+// Ответ кэшируется на 5 минут, чтобы не дёргать Telegram на каждый запрос.
+// В рабочей версии этим займётся сборщик по расписанию, а данные будут лежать в базе.
+const { parseChannel } = require('./_tg');
+const CHANNELS = require('./_channels');
+
+const PAGES = 2; // сколько страниц истории брать с каждого канала (~20 постов на страницу)
+const PARALLEL = 8; // сколько каналов качаем одновременно
+
+async function fetchPage(username, before) {
+  const url = `https://t.me/s/${username}${before ? `?before=${before}` : ''}`;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TrendsBot/0.1)', 'Accept-Language': 'ru' } });
+  if (!r.ok) throw new Error(`${username}: HTTP ${r.status}`);
+  return r.text();
+}
+
+async function loadChannel(cfg) {
+  let channel = null, posts = [], before = 0;
+  for (let i = 0; i < PAGES; i++) {
+    const res = parseChannel(await fetchPage(cfg.username, before), cfg.username);
+    if (!channel) channel = res.channel;
+    if (!res.posts.length) break;
+    posts = res.posts.concat(posts);
+    before = Math.min(...res.posts.map(p => p.id));
+  }
+  const seen = new Set(); posts = posts.filter(p => !seen.has(p.id) && seen.add(p.id));
+  const views = posts.map(p => p.views).filter(Boolean).sort((a, b) => a - b);
+  const reach = views.length ? views[Math.floor(views.length / 2)] : 0;               // охват: медиана просмотров поста
+  Object.assign(channel, { country: cfg.country, cat: cfg.cat, reach, err: channel.subscribers ? +(reach / channel.subscribers * 100).toFixed(1) : 0, postsCount: posts.length });
+  return { channel, posts };
+}
+
+module.exports = async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  // качаем каналы порциями, чтобы не нагружать Telegram
+  const results = [], queue = CHANNELS.slice();
+  await Promise.all(Array.from({ length: PARALLEL }, async () => {
+    while (queue.length) { const c = queue.shift(); try { results.push({ status: 'fulfilled', value: await loadChannel(c) }); } catch (e) { results.push({ status: 'rejected', reason: e }); } }
+  }));
+  const channels = [], videos = [], news = [], errors = [];
+  for (const r of results) {
+    if (r.status !== 'fulfilled') { errors.push(String(r.reason && r.reason.message || r.reason)); continue; }
+    const { channel, posts } = r.value;
+    channels.push(channel);
+    for (const p of posts) {
+      const base = { key: `${channel.username}/${p.id}`, channel: channel.username, id: p.id, text: p.text, views: p.views, date: p.date, cat: channel.cat };
+      if (p.video && p.duration > 0 && p.duration <= 180) videos.push(Object.assign(base, { video: p.video, thumb: p.thumb, duration: p.duration, ratio: p.ratio }));
+      else if (channel.cat === 'news' && p.text && p.text.length > 40) news.push(Object.assign(base, { photo: p.photo || '' }));
+    }
+  }
+  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
+  res.status(200).json({ updated: new Date().toISOString(), channels, videos, news, errors });
+};
