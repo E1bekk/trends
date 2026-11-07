@@ -70,6 +70,10 @@ function toVideoRows({ cfg, channel, posts }) {
 
 async function main() {
   const t0 = Date.now();
+  // 1) связь с базой — проверяем первым делом, чтобы не собирать зря
+  try { await db.check(); console.log('база: связь есть'); }
+  catch (e) { console.error('БАЗА НЕДОСТУПНА:', e.message); process.exit(1); }
+
   const queue = CHANNELS.slice(), loaded = [], errors = [];
   await Promise.all(Array.from({ length: PARALLEL }, async () => {
     while (queue.length) {
@@ -78,6 +82,11 @@ async function main() {
       catch (e) { errors.push(String(e.message || e)); }
     }
   }));
+
+  // 2) что удалось скачать — печатаем ДО записи в базу, иначе при сбое записи не видно причины
+  console.log(`каналов скачано ${loaded.length} из ${CHANNELS.length}, за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
+  if (errors.length) console.log(`не ответили ${errors.length}:`, errors.slice(0, 8).join(' | '));
+  if (!loaded.length) { console.error('НИ ОДИН КАНАЛ НЕ ОТВЕТИЛ — похоже, Telegram не пускает сервер GitHub'); process.exit(1); }
 
   const authors = loaded.map(({ cfg, channel, reach }) => ({
     username: cfg.username, title: channel.title || cfg.username, avatar: channel.avatar || null,
@@ -93,14 +102,14 @@ async function main() {
   for (const v of videos) spread[v.dup_key] = (spread[v.dup_key] || new Set()).add(v.author);
   for (const v of videos) v.spread = spread[v.dup_key].size;
 
+  // 3) запись
   await db.upsertAll('authors', authors, 'username');
+  console.log(`авторов записано ${authors.length}`);
   await db.upsertAll('videos', videos, 'id');
   await db.rpc('refresh_scores');
   if (new Date().getUTCHours() === 4) await db.rpc('cleanup');    // уборка раз в сутки
 
-  console.log(`каналов ${loaded.length}/${CHANNELS.length}, видео ${videos.length}, ` +
-    `повторов ${videos.filter(v => v.spread > 1).length}, за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
-  if (errors.length) console.log('не ответили:', errors.slice(0, 10).join(' | '));
-  if (!loaded.length) process.exit(1);
+  console.log(`ГОТОВО: видео ${videos.length}, повторов ${videos.filter(v => v.spread > 1).length}, ` +
+    `всего за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
 }
 main().catch(e => { console.error(e); process.exit(1); });

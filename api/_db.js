@@ -1,7 +1,9 @@
 // Тонкая обёртка над Supabase: ходим по обычному HTTP, без лишних библиотек.
 // Ключи берутся из переменных окружения и НИКОГДА не лежат в коде и не попадают в GitHub.
-const URL = process.env.SUPABASE_URL;
-const KEY = process.env.SUPABASE_SERVICE_KEY;
+// Адрес приводим в порядок: лишний слэш в конце или скопированный хвост /rest/v1
+// — самая частая ошибка при настройке, из-за неё всё падает с непонятным 404.
+const URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+const KEY = String(process.env.SUPABASE_SERVICE_KEY || '').trim();
 const ready = () => Boolean(URL && KEY);
 
 async function rest(path, { method = 'GET', body, prefer } = {}) {
@@ -15,7 +17,12 @@ async function rest(path, { method = 'GET', body, prefer } = {}) {
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   const text = await r.text();
-  if (!r.ok) throw new Error(`${method} ${path} → ${r.status} ${text.slice(0, 300)}`);
+  if (!r.ok) {
+    const hint = r.status === 401 || r.status === 403 ? ' — похоже, неверный SUPABASE_SERVICE_KEY'
+      : r.status === 404 ? ' — похоже, неверный SUPABASE_URL или в базе нет такой таблицы (схема не выполнена?)'
+      : '';
+    throw new Error(`${method} ${path} → ${r.status}${hint}. Ответ: ${text.slice(0, 200)}`);
+  }
   return text ? JSON.parse(text) : null;
 }
 
@@ -32,4 +39,14 @@ async function upsertAll(table, rows, onConflict, size = 400) {
   for (let i = 0; i < rows.length; i += size) await upsert(table, rows.slice(i, i + size), onConflict);
 }
 
-module.exports = { ready, rest, select, insert, upsert, upsertAll, patch, remove, rpc };
+// Короткая проверка связи: сразу говорим, что не так, а не падаем на полпути
+async function check() {
+  if (!URL) throw new Error('не задан SUPABASE_URL');
+  if (!KEY) throw new Error('не задан SUPABASE_SERVICE_KEY');
+  if (!/^https:\/\/[\w-]+\.supabase\.(co|in)$/.test(URL))
+    throw new Error(`SUPABASE_URL выглядит странно: "${URL}". Ожидается вид https://xxxx.supabase.co`);
+  await select('authors', 'select=username&limit=1');
+  return true;
+}
+
+module.exports = { ready, check, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
