@@ -392,3 +392,10 @@ h1, h2, h3 { margin: 0; }
 /* ===== «чистый экран» (щипок двумя пальцами): остаётся только видео ===== */
 .feed .rail, .feed .slide-info, .feed .feed-top, .feed .slide-shade { transition: opacity .25s; }
 .feed.clear .rail, .feed.clear .slide-info, .feed.clear .feed-top, .feed.clear .slide-shade { opacity: 0; pointer-events: none; }
+
+/* ===== как в TikTok: никаких кружков загрузки — кадр «замирает», а при долгом ожидании внизу бежит тонкая полоска ===== */
+.slide-loader { display: none !important; }
+.slide-progress.stall { background: rgba(255, 255, 255, .12); }
+.slide-progress.stall i { position: relative; transform: none !important; width: 30%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .9), transparent); animation: stall .9s linear infinite; }
+@keyframes stall { from { left: -30%; } to { left: 100%; } }
+.slide-video { background: transparent; }

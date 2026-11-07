@@ -20,12 +20,13 @@ import { openTg, share, haptic, backButton } from '../lib/tg';
 // Звук: ролики всегда играют со звуком (громкость — кнопками телефона).
 // Если браузер не разрешил звук до первого касания — ролик идёт без звука, и при первом же
 // касании экрана (свайп, тап) звук молча включается. Никаких кнопок и подсказок.
+let soundOK = false;   // браузер уже разрешил звук (было касание)
 if (typeof document !== 'undefined') {
-  const unlock = () => document.querySelectorAll('video').forEach(el => {
+  const unlock = () => { soundOK = true; document.querySelectorAll('video.is-active').forEach(el => {
     if (!el.muted) return;
     el.muted = false;
     if (!el.paused) el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
-  });
+  }); };
   ['touchend', 'click', 'keydown'].forEach(t => document.addEventListener(t, unlock, true));
 }
 const SPEEDS = [1, 1.5, 2, 0.5];
@@ -37,7 +38,7 @@ const ahead = () => {
 };
 const hasScrollEnd = typeof window !== 'undefined' && 'onscrollend' in window;
 
-const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, preload, liked, saved, follow, onChannel, onBroken, onReady, tick, rate, setRate, paused: pausedOutside }) {
+const Slide = memo(function Slide({ v, fresh, blob, ch, active, warm, withVideo, preload, liked, saved, follow, onChannel, onBroken, onReady, tick, rate, setRate, paused: pausedOutside }) {
   const ref = useRef(null);
   const bar = useRef(null);
   const cur = fresh || v;                                 // самые свежие ссылки на видео (они со временем устаревают)
@@ -45,7 +46,10 @@ const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, prelo
   const started = useRef(false);
   const [paused, setPaused] = useState(false);
   const [vertical, setVertical] = useState(v.ratio < 1);
-  const [loading, setLoading] = useState(true);
+  const [stall, setStall] = useState(false);            // интернет не успевает: тонкая бегущая полоска внизу, как в TikTok
+  const stallTimer = useRef(0);
+  const activeRef = useRef(active); activeRef.current = active;
+  const warmed = useRef(false);
   const [failed, setFailed] = useState(false);
   const [burst, setBurst] = useState(0);
   const [more, setMore] = useState(false);
@@ -59,7 +63,7 @@ const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, prelo
   }, [blob]); // eslint-disable-line
   // пришла свежая ссылка — подставляем, если видео ещё не играет или сломалось
   useEffect(() => {
-    if (src !== blob && cur.video !== src && (failed || !withVideo)) { setSrc(cur.video); setFailed(false); setLoading(true); tries.current = 0; }
+    if (src !== blob && cur.video !== src && (failed || !withVideo)) { setSrc(cur.video); setFailed(false); tries.current = 0; }
   }, [cur.video, failed, withVideo]); // eslint-disable-line
 
   // для iPhone: видео играет внутри страницы, а не в системном плеере
@@ -69,14 +73,29 @@ const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, prelo
   }, [withVideo]);
   useEffect(() => { const el = ref.current; if (el) el.playbackRate = fast ? 2 : rate; }, [rate, fast, withVideo, active]);
 
+  // «Прогрев» следующих роликов (как в TikTok): запускаем без звука и сразу ставим на паузу.
+  // Так первый кадр уже на экране и начало уже в буфере — при свайпе ролик стартует мгновенно.
+  useEffect(() => { warmed.current = false; }, [src]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || active || !warm || warmed.current) return;
+    warmed.current = true;
+    el.muted = true;
+    const p = el.play();
+    if (p) p.then(() => { if (!activeRef.current) el.pause(); }).catch(() => { warmed.current = false; });
+  }, [warm, active, withVideo, src]);
+
   useEffect(() => {
     const el = ref.current; if (!el) return;
     if (active && !pausedOutside && !paused) {
+      el.muted = false;
       const p = el.play();
-      if (p) p.catch(() => { el.muted = true; el.play().catch(() => setPaused(true)); });   // звук не разрешён — пока без звука
-    } else el.pause();
+      if (p) p.then(() => { if (!el.muted) soundOK = true; })
+        .catch(() => { el.muted = true; el.play().catch(() => setPaused(true)); });   // звук пока не разрешён — без звука до первого касания
+    } else if (!el.paused) el.pause();
   }, [active, withVideo, pausedOutside, paused]);
-  useEffect(() => { if (!active) { setPaused(false); setMore(false); const el = ref.current; if (el && el.currentTime > 0 && !el.paused) el.pause(); } }, [active]);
+  useEffect(() => { if (!active) { setPaused(false); setMore(false); setStall(false); clearTimeout(stallTimer.current); } }, [active]);
+  useEffect(() => () => clearTimeout(stallTimer.current), []);
 
   const onDown = e => {
     const h = hold.current; h.fired = false; h.x = e.clientX; h.y = e.clientY;
@@ -104,28 +123,29 @@ const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, prelo
   };
   useEffect(() => () => clearTimeout(tapTimer.current), []);
   const retry = () => {
-    setFailed(false); setLoading(true);
+    setFailed(false);
     if (cur.video !== src) { setSrc(cur.video); return; }   // и для сломанного скачанного — назад к сети
     const el = ref.current; if (el) { el.load(); el.play().catch(() => {}); }
   };
   const onError = () => {
     tries.current++;
     if (tries.current === 1) onBroken(v);            // ссылка могла устареть — просим свежую ленту
-    setFailed(true); setLoading(false);
+    setFailed(true); setStall(false);
   };
-  const ready = () => { started.current = true; setLoading(false); setFailed(false); if (active) onReady(v.key); };
+  const ready = () => { clearTimeout(stallTimer.current); setStall(false); setFailed(false); if (activeRef.current) { started.current = true; onReady(v.key); } };
+  // ролик ждёт данные: кадр просто «замирает»; если ждём дольше 0,6 с — внизу бежит тонкая полоска
+  const waiting = () => { if (!activeRef.current) return; clearTimeout(stallTimer.current); stallTimer.current = setTimeout(() => setStall(true), 600); };
 
   return (
     <section className="slide">
       <div className="slide-media" onClick={onTap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
         {cur.thumb && <img className={vertical ? 'slide-poster cover' : 'slide-poster-fit'} src={cur.thumb} alt="" decoding="async" />}
-        {withVideo && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={src} loop playsInline preload={preload}
+        {withVideo && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '') + (active ? ' is-active' : '')} src={src} poster={cur.thumb || undefined} loop playsInline muted={!active || !soundOK} preload={preload}
           disablePictureInPicture disableRemotePlayback
           onLoadedMetadata={e => setVertical(e.target.videoHeight > e.target.videoWidth * 1.15)}
-          onWaiting={() => setLoading(true)} onPlaying={ready} onCanPlay={() => setLoading(false)}
+          onWaiting={waiting} onPlaying={ready} onSeeked={ready}
           onTimeUpdate={e => { const t = e.target; if (bar.current) bar.current.style.transform = `scaleX(${t.duration ? t.currentTime / t.duration : 0})`; if (active) tick(v, t.currentTime); }}
           onError={onError} />}
-        {active && loading && !failed && <span className="slide-loader"><i /></span>}
         {failed && <span className="slide-failed"><b>Видео не загрузилось</b><button onClick={e => { e.stopPropagation(); retry(); }}><I.refresh width="18" height="18" />Ещё раз</button>
           <button className="ghost" onClick={e => { e.stopPropagation(); openTg(`${v.channel}/${v.id}`); }}>Открыть в Telegram</button></span>}
         {paused && !failed && <span className="slide-paused"><I.play width="64" height="64" /></span>}
@@ -157,7 +177,7 @@ const Slide = memo(function Slide({ v, fresh, blob, ch, active, withVideo, prelo
         <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {v.game || catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
         {v.text && <p className={'slide-text' + (more ? ' open' : '')} onClick={() => setMore(!more)}>{v.text}</p>}
       </div>
-      <div className="slide-progress"><i ref={bar} /></div>
+      <div className={'slide-progress' + (stall ? ' stall' : '')}><i ref={bar} /></div>
     </section>
   );
 });
@@ -212,7 +232,13 @@ export default function Feed({ list: initial, start = 0, chMap, fresh, mode, emb
     }, 400);
   }, [flush]);
   const timer = useRef(0);
-  const onScroll = () => { clearTimeout(timer.current); timer.current = setTimeout(settle, hasScrollEnd ? 250 : 90); };
+  const onScroll = () => {
+    clearTimeout(timer.current);
+    const el = box.current; if (!el) return;
+    const pos = el.scrollTop / el.clientHeight;
+    if (Math.abs(pos - Math.round(pos)) < 0.015) settle();          // ролик уже встал на место — включаем без ожидания
+    else timer.current = setTimeout(settle, hasScrollEnd ? 250 : 90);
+  };
   useEffect(() => {
     const el = box.current; if (!el || !hasScrollEnd) return;
     const f = () => { clearTimeout(timer.current); settle(); };
@@ -241,6 +267,7 @@ export default function Feed({ list: initial, start = 0, chMap, fresh, mode, emb
       const i = Math.max(0, active - 2) + k;
       return { key: v.key, src: ((fresh && fresh[v.key]) || v).video, dur: v.duration, start: i > active };
     }).sort((a, b) => (a.start === b.start ? 0 : a.start ? 1 : -1)));
+    list.slice(active + 1, active + 7).forEach(v => { const t = ((fresh && fresh[v.key]) || v).thumb; if (t) { const im = new Image(); im.decoding = 'async'; im.src = t; } });
     if (curReady) { go(); return; }
     const t = setTimeout(go, 1000); return () => clearTimeout(t);
   }, [active, list, paused, curReady]); // eslint-disable-line
@@ -263,8 +290,8 @@ export default function Feed({ list: initial, start = 0, chMap, fresh, mode, emb
             if (d < -1 || d > 3) return <Empty key={key} />;
             const withVideo = d >= -1 && d <= 2;
             // текущий качаем полностью; следующий — как только текущий заиграл; остальные — только начало
-            const preload = d === 0 ? 'auto' : d === 1 && curReady ? 'auto' : 'metadata';
-            return <Slide key={key} v={v} fresh={fresh && fresh[v.key]} blob={P.get(v.key)} ch={chMap[v.channel]} active={d === 0} withVideo={withVideo} preload={preload}
+            const preload = d === 0 || d === 1 ? 'auto' : 'metadata';
+            return <Slide key={key} v={v} fresh={fresh && fresh[v.key]} blob={P.get(v.key)} ch={chMap[v.channel]} active={d === 0} warm={(d === 1 || d === 2) && curReady} withVideo={withVideo} preload={preload}
               liked={St.isLiked(v.key)} saved={St.isSaved(v.key)} follow={St.isFollowing(v.channel)}
               rate={rate} setRate={setRate} paused={paused}
               onChannel={goChannel} onBroken={onBroken} onReady={onReady} tick={tick} />;
