@@ -1,5 +1,5 @@
 // Экраны: главная (истории + вкладки + плитка), каналы, страница канала, новости, профиль.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { I, Avatar } from './Icons';
 import { fmt, dur, ago, CATS, catName, catEmoji, catColor, COUNTRIES } from '../lib/format';
 import * as St from '../lib/store';
@@ -7,10 +7,19 @@ import { openTg, tgUser } from '../lib/tg';
 import { forYou, trending } from '../lib/reco';
 
 // ---------- плитка в два столбца (как Explore в Instagram / Pinterest) ----------
+const STEP = 24;   // сколько карточек добавлять за раз — иначе телефон «давится» тысячей картинок
 export function Masonry({ items, onOpen, hot, empty, small }) {
+  const [n, setN] = useState(STEP);
+  const end = useRef(null);
+  useEffect(() => { setN(STEP); }, [items]);
+  useEffect(() => {
+    const el = end.current; if (!el || n >= items.length) return;
+    const io = new IntersectionObserver(e => { if (e[0].isIntersecting) setN(x => x + STEP); }, { rootMargin: '900px 0px' });
+    io.observe(el); return () => io.disconnect();
+  }, [n, items]);
   if (!items.length) return empty || <Empty emoji="🫥" title="Тут пока пусто" />;
   const cols = [[], []], h = [0, 0];
-  items.forEach((v, i) => {
+  items.slice(0, n).forEach((v, i) => {
     const tall = v.ratio < 1 ? 1.62 : v.ratio > 1.3 ? 0.82 : 1.15;
     const c = h[0] <= h[1] ? 0 : 1; cols[c].push([v, i, tall]); h[c] += tall;
   });
@@ -32,6 +41,7 @@ export function Masonry({ items, onOpen, hot, empty, small }) {
           ))}
         </div>
       ))}
+      {n < items.length && <span ref={end} className="masonry-end" />}
     </div>
   );
 }

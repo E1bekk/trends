@@ -11,7 +11,10 @@ export function initTelegram() {
     if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();   // свайп по ленте не закрывает приложение
     if (tg.setHeaderColor) tg.setHeaderColor('#0b0b12');
     if (tg.setBackgroundColor) tg.setBackgroundColor('#0b0b12');
-    if (tg.setBottomBarColor) tg.setBottomBarColor('#0b0b12');
+    if (tg.setBottomBarColor) tg.setBottomBarColor('#000000');
+    // на телефоне — во весь экран, без шапки Telegram (как TikTok)
+    const phone = tg.platform === 'ios' || tg.platform === 'android';
+    if (phone && tg.requestFullscreen && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && !tg.isFullscreen) tg.requestFullscreen();
   } catch (e) {}
 }
 export function tgUser() {

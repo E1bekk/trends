@@ -66,8 +66,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
   return (
     <section className="slide">
       <div className="slide-media" onClick={onTap}>
-        {v.thumb && <img className={'slide-poster' + (vertical ? ' cover' : '')} src={v.thumb} alt="" />}
-        {v.thumb && !vertical && <img className="slide-poster-fit" src={v.thumb} alt="" />}
+        {v.thumb && <img className={vertical ? 'slide-poster cover' : 'slide-poster-fit'} src={v.thumb} alt="" />}
         {near && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={v.video} loop playsInline muted preload={active || next ? 'auto' : 'metadata'}
           onLoadedMetadata={e => setVertical(e.target.videoHeight > e.target.videoWidth * 1.15)}
           onWaiting={() => setLoading(true)} onPlaying={() => { setLoading(false); setFailed(false); }} onCanPlay={() => setLoading(false)}
@@ -82,7 +81,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
       <div className="slide-shade" />
       <aside className="rail">
         <button className="rail-ava" onClick={() => onChannel(v.channel)}>
-          <Avatar ch={ch} size={44} ring="on" />
+          <Avatar ch={ch} size={38} ring="on" />
           {!follow && <span className="rail-plus" onClick={e => { e.stopPropagation(); St.toggleFollow(v.channel, v.cat); haptic(); }}>+</span>}
         </button>
         <button className={'rail-btn' + (liked ? ' on-like' : '')} onClick={() => { St.toggleLike(v); haptic(); }}>
@@ -97,7 +96,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
         <div className="slide-ch">
           <button className="slide-chname" onClick={() => onChannel(v.channel)}>{ch ? ch.title : v.channel}</button>
           <button className="btn-sub" onClick={() => { openTg(v.channel); if (!St.isFollowing(v.channel)) St.toggleFollow(v.channel, v.cat); }}>
-            <I.plane width="15" height="15" />Подписаться</button>
+            <I.plane width="13" height="13" />Подписаться</button>
         </div>
         <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
         {v.text && <p className={'slide-text' + (more ? ' open' : '')} onClick={() => setMore(!more)}>{v.text}</p>}
@@ -166,7 +165,7 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
             <i />
           </div>
         ) : <span className="feed-title">{{ channel: 'Канал', profile: 'Моё', explore: 'Обзор', trends: 'Тренды', follow: 'Подписки' }[mode] || 'Лента'}</span>}
-        <button className="feed-btn" onClick={toggleMute}>{muted ? <I.mute /> : <I.sound />}</button>
+        <button className="feed-btn" onClick={toggleMute}>{muted ? <I.mute width="19" height="19" /> : <I.sound width="19" height="19" />}</button>
       </div>
       {list.length ? (
         <div className="feed-scroll" ref={box} onScroll={onScroll}>
@@ -178,7 +177,7 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
       ) : (
         <div className="feed-empty"><div className="empty-emoji">👀</div><b>Пока пусто</b><p>{mode === 'follow' ? 'Подпишись на каналы кнопкой «+» у аватара — их ролики будут здесь.' : 'Ролики скоро появятся.'}</p></div>
       )}
-      {muted && list.length > 0 && !paused && <button className="feed-hint" onClick={unmuteNow}><I.sound width="18" height="18" />Коснись, чтобы включить звук</button>}
+      {muted && list.length > 0 && !paused && <button className="feed-hint" onClick={unmuteNow}><I.sound width="15" height="15" />Коснись для звука</button>}
     </div>
   );
 }

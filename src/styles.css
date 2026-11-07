@@ -8,6 +8,8 @@
   --aurora2: linear-gradient(135deg, #3df0ff 0%, #8b5cff 50%, #ff3d81 100%);
   --glass: rgba(20, 20, 30, .62);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  /* в полноэкранном режиме Telegram: вырез экрана + его кнопки «Закрыть / ⋯» */
+  --safe-t: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
   --display: 'Unbounded', 'Manrope', sans-serif;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -296,3 +298,60 @@ h1, h2, h3 { margin: 0; }
 .app.on-feed .tabbar button.on svg { filter: none; }
 .feed-scroll { -webkit-overflow-scrolling: touch; }
 .slide-video, .slide-poster { will-change: auto; }
+
+.masonry-end { grid-column: 1 / -1; height: 1px; }
+
+/* ===== компактный интерфейс: меньше кнопок — больше видео ===== */
+.screen { padding-top: var(--safe-t); }
+.back { top: calc(10px + var(--safe-t)); }
+.feed-top { top: var(--safe-t); padding: 6px 10px; }
+.feed-btn { width: 34px; height: 34px; border-radius: 11px; }
+.feed-side { width: 34px; }
+.feed-tabs { gap: 16px; padding-bottom: 6px; }
+.feed-tabs button { font-size: 14.5px; }
+.feed-tabs button.on { transform: none; }
+.feed-tabs button.on::after { bottom: -6px; width: 18px; height: 2.5px; }
+.feed-title { font-size: 14px; }
+.feed-hint { top: calc(52px + var(--safe-t)); padding: 6px 11px; gap: 6px; font-size: 12px; }
+
+.rail { right: 6px; gap: 10px; }
+.rail-ava { margin-bottom: 6px; }
+.rail-plus { width: 18px; height: 18px; border-radius: 6px; font-size: 13px; bottom: -8px; }
+.rail-btn, .rail-views { gap: 2px; font-size: 10px; }
+.rail-ic, .feed .rail-ic { width: 40px; height: 40px; border-radius: 50%; background: none; border: 0; }
+.rail-ic svg { width: 27px; height: 27px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6)); }
+.rail-btn.on-like .rail-ic, .rail-btn.on-save .rail-ic { background: none; border: 0; }
+.rail-views .rail-ic { height: 26px; }
+.rail-views .rail-ic svg { width: 22px; height: 22px; }
+
+.slide-info { left: 12px; right: 62px; gap: 6px; }
+.slide-chname { font-size: 14px; }
+.btn-sub { height: 26px; padding: 0 10px; border-radius: 9px; font-size: 12px; gap: 5px; box-shadow: none; }
+.slide-tags span { font-size: 10.5px; padding: 2px 8px; }
+.slide-text { font-size: 13px; }
+.slide-progress { left: 0; right: 0; height: 2px; border-radius: 0; }
+
+/* нижнее меню: тоньше и ниже */
+.tabbar { bottom: calc(8px + var(--safe-b)); padding: 3px 6px; border-radius: 22px; grid-template-columns: 1fr 1fr 60px 1fr 1fr; }
+.tabbar button { padding: 4px 0; gap: 1px; font-size: 9.5px; }
+.tabbar button svg { width: 21px; height: 21px; }
+.tab-center span { width: 42px; height: 42px; margin-top: -10px; box-shadow: 0 6px 16px rgba(139, 92, 255, .35); }
+.tab-center svg, .tabbar .tab-center svg { width: 21px; height: 21px; }
+.tab-center small { font-size: 9.5px; }
+.app { padding-bottom: calc(76px + var(--safe-b)); }
+.app.on-feed .tabbar { left: 0; right: 0; bottom: 0; transform: none; width: 100%; border-radius: 0; border: 0; border-top: 1px solid rgba(255, 255, 255, .07); padding: 3px 6px calc(3px + var(--safe-b)); background: #000; }
+.app.on-feed .tab-center span { margin-top: 0; }
+.feed.embedded { bottom: calc(52px + var(--safe-b)); }
+.feed.embedded .rail { bottom: 96px; }
+.feed.embedded .slide-info { bottom: 12px; }
+.feed.embedded .slide-progress { bottom: 0; }
+.feed:not(.embedded) .rail { bottom: calc(110px + var(--safe-b)); }
+.feed:not(.embedded) .slide-info { bottom: calc(18px + var(--safe-b)); }
+.feed-scroll .slide { height: 100%; }
+.app.on-feed .tabbar { height: calc(52px + var(--safe-b)); align-content: start; }
+.app.on-feed .tabbar { height: calc(56px + var(--safe-b)); padding-top: 4px; }
+.app.on-feed .tab-center span { width: 36px; height: 36px; }
+.app.on-feed .tab-center svg { width: 19px; height: 19px; }
+.feed.embedded { bottom: calc(56px + var(--safe-b)); }
+.app.on-feed .tab-center small { display: none; }
+.app.on-feed .tab-center { align-self: center; }
