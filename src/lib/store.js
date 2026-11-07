@@ -5,7 +5,19 @@ const empty = () => ({ likes: [], saves: [], follows: [], watch: {}, chan: {}, c
 let S = empty();
 try { S = Object.assign(empty(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
 const subs = new Set();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} subs.forEach(f => f()); };
+// запись в память телефона — не сразу, а пачкой (JSON.stringify на каждый свайп тормозит ленту)
+let timer = 0;
+const persist = () => {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    const keys = Object.keys(S.seen);
+    if (keys.length > 3000) keys.sort((a, b) => S.seen[a] - S.seen[b]).slice(0, keys.length - 3000).forEach(k => { delete S.seen[k]; delete S.watch[k]; });
+    try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  }, 1500);
+};
+// ui = true — изменилось то, что видно на экране (лайк, сохранение, подписка): тогда перерисовываем
+const save = (ui = true) => { persist(); if (ui) subs.forEach(f => f()); };
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { clearTimeout(timer); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} });
 export const onChange = f => { subs.add(f); return () => subs.delete(f); };
 export const state = () => S;
 
@@ -39,7 +51,7 @@ export function toggleFollow(username, cat) {
   S.follows = on ? [username, ...S.follows] : S.follows.filter(x => x !== username);
   bump({ channel: username, cat }, on ? W.follow : W.unfollow); save(); return on;
 }
-export function shared(v) { bump(v, W.share); save(); }
+export function shared(v) { bump(v, W.share); save(false); }
 // Сколько досмотрел: досмотрел почти до конца — плюс, пролистал за 2 секунды — минус
 export function watched(v, seconds) {
   if (!v || seconds < 0.3) return;
@@ -49,7 +61,7 @@ export function watched(v, seconds) {
   S.watch[v.key] = { t: Math.max(prev.t, seconds), r: Math.max(prev.r || 0, ratio), n: prev.n + 1, at: Date.now() };
   S.seen[v.key] = Date.now();
   if (w) bump(v, w);
-  save();
+  save(false);
 }
 export function resetTaste() {
   const keep = { likes: S.likes, saves: S.saves, follows: S.follows };

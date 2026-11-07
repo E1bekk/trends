@@ -62,7 +62,8 @@ export function following(videos) {
   return videos.filter(v => f.has(v.channel)).sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 // «Досортировать» хвост ленты после новых сигналов, не трогая уже показанное
-export function rerankTail(list, fromIndex, chMap) {
-  const head = list.slice(0, fromIndex + 1), tail = list.slice(fromIndex + 1);
-  return head.concat(forYou(tail, chMap, fromIndex * 7919 + 13));
+// (только ближайшие ~40 роликов — пересортировка всей ленты на каждом свайпе даёт рывки)
+export function rerankTail(list, fromIndex, chMap, size = 40) {
+  const head = list.slice(0, fromIndex), mid = list.slice(fromIndex, fromIndex + size), tail = list.slice(fromIndex + size);
+  return head.concat(forYou(mid, chMap, fromIndex * 7919 + 13), tail);
 }

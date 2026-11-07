@@ -55,5 +55,14 @@ module.exports = async (req, res) => {
     }
   }
   res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
+  // ?lite=1 — быстрый старт: по 3 лучших свежих ролика с канала, без новостей (~в 6 раз меньше)
+  if (req.query && req.query.lite) {
+    const reach = Object.fromEntries(channels.map(c => [c.username, c.reach || 1]));
+    const score = v => v.views / Math.max(50, reach[v.channel]) * Math.exp(-(Date.now() - new Date(v.date)) / 36e5 / 96);
+    const by = {};
+    videos.forEach(v => (by[v.channel] = by[v.channel] || []).push(v));
+    const lite = [].concat(...Object.values(by).map(l => l.sort((a, b) => score(b) - score(a)).slice(0, 3)));
+    return res.status(200).json({ updated: new Date().toISOString(), lite: true, channels, videos: lite, news: [], errors: [] });
+  }
   res.status(200).json({ updated: new Date().toISOString(), channels, videos, news, errors });
 };

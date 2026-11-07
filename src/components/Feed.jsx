@@ -2,60 +2,71 @@
 // Работает в двух режимах:
 //  • главная страница (embedded) — сверху вкладки «Подписки / Для вас / Тренды», снизу меню;
 //  • поверх экрана — когда открыли ролик из обзора, канала или профиля (кнопка «назад»).
-import { useEffect, useRef, useState, useCallback } from 'react';
+//
+// Для плавности:
+//  • на странице живут только ролики рядом с текущим (остальные — пустые места);
+//  • видео есть только у текущего, предыдущего и двух следующих; следующий качается заранее,
+//    как только текущий начал играть;
+//  • «текущий» ролик переключается, когда палец отпустил и лента встала на место, а не посреди свайпа;
+//  • слайд перерисовывается, только если у него что-то поменялось (React.memo).
+import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { I, Avatar } from './Icons';
 import { fmt, catName, catEmoji, catColor, COUNTRIES } from '../lib/format';
 import * as St from '../lib/store';
 import { rerankTail } from '../lib/reco';
 import { openTg, share, haptic, backButton } from '../lib/tg';
 
-let soundOn = false; // звук включается после первого касания и дальше остаётся включённым
+// Звук: ролики всегда играют со звуком (громкость — кнопками телефона).
+// Если браузер не разрешил звук до первого касания — ролик идёт без звука, и при первом же
+// касании экрана (свайп, тап) звук молча включается. Никаких кнопок и подсказок.
+if (typeof document !== 'undefined') {
+  const unlock = () => document.querySelectorAll('video').forEach(el => {
+    if (!el.muted) return;
+    el.muted = false;
+    if (!el.paused) el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
+  });
+  ['touchend', 'click', 'keydown'].forEach(t => document.addEventListener(t, unlock, true));
+}
 const SPEEDS = [1, 1.5, 2, 0.5];
 let speed = 1;       // выбранная скорость — одна на всю ленту
+const hasScrollEnd = typeof window !== 'undefined' && 'onscrollend' in window;
 
-// Полный экран для горизонтального видео (как в TikTok): на iPhone — системный плеер, он сам поворачивается
-function fullscreen(el) {
-  if (!el) return;
-  try {
-    if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); return; }
-    const p = el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen && el.webkitRequestFullscreen();
-    Promise.resolve(p).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
-  } catch (e) {}
-}
-
-function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken, tick, rate, setRate, paused: pausedOutside }) {
+const Slide = memo(function Slide({ v, fresh, ch, active, withVideo, preload, liked, saved, follow, onChannel, onBroken, onReady, tick, rate, setRate, paused: pausedOutside }) {
   const ref = useRef(null);
+  const bar = useRef(null);
+  const cur = fresh || v;                                 // самые свежие ссылки на видео (они со временем устаревают)
+  const [src, setSrc] = useState(cur.video);
   const [paused, setPaused] = useState(false);
   const [vertical, setVertical] = useState(v.ratio < 1);
-  const bar = useRef(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [burst, setBurst] = useState(0);
   const [more, setMore] = useState(false);
-  const lastTap = useRef(0), tries = useRef(0);
   const [fast, setFast] = useState(false);              // удержание пальца — ускорение ×2
+  const lastTap = useRef(0), tries = useRef(0);
   const hold = useRef({ t: 0, x: 0, y: 0, fired: false });
-  useEffect(() => { const el = ref.current; if (el) el.playbackRate = fast ? 2 : rate; }, [rate, fast, near, active]);
-  const liked = St.isLiked(v.key), saved = St.isSaved(v.key), follow = St.isFollowing(v.channel);
 
-  // для iPhone: беззвучный автозапуск разрешён только с атрибутами muted + playsinline
+  // пришла свежая ссылка — подставляем, если видео ещё не играет или сломалось
+  useEffect(() => {
+    if (cur.video !== src && (failed || !withVideo)) { setSrc(cur.video); setFailed(false); setLoading(true); tries.current = 0; }
+  }, [cur.video, failed, withVideo]); // eslint-disable-line
+
+  // для iPhone: видео играет внутри страницы, а не в системном плеере
   useEffect(() => {
     const el = ref.current; if (!el) return;
-    el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', ''); el.setAttribute('muted', '');
-  }, [near]);
+    el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', '');
+  }, [withVideo]);
+  useEffect(() => { const el = ref.current; if (el) el.playbackRate = fast ? 2 : rate; }, [rate, fast, withVideo, active]);
 
   useEffect(() => {
     const el = ref.current; if (!el) return;
     if (active && !pausedOutside && !paused) {
-      el.muted = muted;
       const p = el.play();
-      if (p) p.catch(() => { el.muted = true; setMuted(true); el.play().catch(() => setPaused(true)); });
+      if (p) p.catch(() => { el.muted = true; el.play().catch(() => setPaused(true)); });   // звук не разрешён — пока без звука
     } else el.pause();
-  }, [active, muted, near, pausedOutside, paused, setMuted]);
-  useEffect(() => { if (!active) { setPaused(false); const el = ref.current; if (el && !near) el.currentTime = 0; } }, [active, near]);
+  }, [active, withVideo, pausedOutside, paused]);
+  useEffect(() => { if (!active) { setPaused(false); setMore(false); const el = ref.current; if (el && el.currentTime > 0 && !el.paused) el.pause(); } }, [active]);
 
-  // Касание обрабатываем СРАЗУ (иначе iPhone не даёт включить звук):
-  // первое касание — звук/пауза, второе быстрое — лайк (и пауза отменяется).
   const onDown = e => {
     const h = hold.current; h.fired = false; h.x = e.clientX; h.y = e.clientY;
     clearTimeout(h.t);
@@ -63,6 +74,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
   };
   const onMove = e => { const h = hold.current; if (!h.fired && Math.hypot(e.clientX - h.x, e.clientY - h.y) > 12) clearTimeout(h.t); };
   const onUp = () => { const h = hold.current; clearTimeout(h.t); if (h.fired) setFast(false); };
+  // Касание — пауза/продолжить, двойное — лайк (и пауза отменяется).
   const onTap = () => {
     if (hold.current.fired) { hold.current.fired = false; return; }   // это было удержание, а не касание
     const el = ref.current, now = Date.now();
@@ -76,55 +88,58 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
     lastTap.current = now;
     if (!el) return;
     if (failed) { retry(); return; }
-    if (!soundOn || el.muted) { soundOn = true; setMuted(false); el.muted = false; el.play().catch(() => {}); setPaused(false); return; }
     if (el.paused) { el.play().catch(() => {}); setPaused(false); } else { el.pause(); setPaused(true); }
   };
-  const retry = () => { setFailed(false); setLoading(true); const el = ref.current; if (el) { el.load(); el.play().catch(() => {}); } };
+  const retry = () => {
+    setFailed(false); setLoading(true);
+    if (cur.video !== src) { setSrc(cur.video); return; }
+    const el = ref.current; if (el) { el.load(); el.play().catch(() => {}); }
+  };
   const onError = () => {
     tries.current++;
     if (tries.current === 1) onBroken(v);            // ссылка могла устареть — просим свежую ленту
     setFailed(true); setLoading(false);
   };
+  const ready = () => { setLoading(false); setFailed(false); if (active) onReady(v.key); };
 
   return (
     <section className="slide">
       <div className="slide-media" onClick={onTap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
-        {v.thumb && <img className={vertical ? 'slide-poster cover' : 'slide-poster-fit'} src={v.thumb} alt="" />}
-        {near && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={v.video} loop playsInline muted preload={active || next ? 'auto' : 'metadata'}
+        {cur.thumb && <img className={vertical ? 'slide-poster cover' : 'slide-poster-fit'} src={cur.thumb} alt="" decoding="async" />}
+        {withVideo && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={src} loop playsInline preload={preload}
+          disablePictureInPicture disableRemotePlayback
           onLoadedMetadata={e => setVertical(e.target.videoHeight > e.target.videoWidth * 1.15)}
-          onWaiting={() => setLoading(true)} onPlaying={() => { setLoading(false); setFailed(false); }} onCanPlay={() => setLoading(false)}
-          onTimeUpdate={e => { const t = e.target; if (bar.current) bar.current.style.transform = `scaleX(${t.duration ? t.currentTime / t.duration : 0})`; tick(v, t.currentTime); }}
+          onWaiting={() => setLoading(true)} onPlaying={ready} onCanPlay={() => setLoading(false)}
+          onTimeUpdate={e => { const t = e.target; if (bar.current) bar.current.style.transform = `scaleX(${t.duration ? t.currentTime / t.duration : 0})`; if (active) tick(v, t.currentTime); }}
           onError={onError} />}
         {active && loading && !failed && <span className="slide-loader"><i /></span>}
         {failed && <span className="slide-failed"><b>Видео не загрузилось</b><button onClick={e => { e.stopPropagation(); retry(); }}><I.refresh width="18" height="18" />Ещё раз</button>
           <button className="ghost" onClick={e => { e.stopPropagation(); openTg(`${v.channel}/${v.id}`); }}>Открыть в Telegram</button></span>}
         {paused && !failed && <span className="slide-paused"><I.play width="64" height="64" /></span>}
         {fast && <span className="slide-fast">2x ▶▶</span>}
-        {!vertical && !failed && near && <button className="slide-full" style={{ top: `calc(50% + ${50 / Math.max(1.05, v.ratio || 1.78)}vw + 12px)` }}
-          onClick={e => { e.stopPropagation(); fullscreen(ref.current); }}><I.expand width="15" height="15" />Полный экран</button>}
         {burst > 0 && <span key={burst} className="slide-burst"><I.heart fill width="110" height="110" /></span>}
       </div>
       <div className="slide-shade" />
       <aside className="rail">
         <button className="rail-ava" onClick={() => onChannel(v.channel)}>
-          <Avatar ch={ch} size={38} ring="on" />
+          <Avatar ch={ch} size={34} ring="on" />
           {!follow && <span className="rail-plus" onClick={e => { e.stopPropagation(); St.toggleFollow(v.channel, v.cat); haptic(); }}>+</span>}
         </button>
         <button className={'rail-btn' + (liked ? ' on-like' : '')} onClick={() => { St.toggleLike(v); haptic(); }}>
-          <span className="rail-ic"><I.heart fill={liked} /></span><span>{liked ? 'Нравится' : 'Лайк'}</span></button>
+          <span className="rail-ic"><I.heart fill={liked} /></span></button>
         <button className={'rail-btn' + (saved ? ' on-save' : '')} onClick={() => { St.toggleSave(v); haptic(); }}>
-          <span className="rail-ic"><I.bookmark fill={saved} /></span><span>{saved ? 'Сохранено' : 'Сохранить'}</span></button>
+          <span className="rail-ic"><I.bookmark fill={saved} /></span></button>
         <button className="rail-btn" onClick={() => { St.shared(v); share(`${v.channel}/${v.id}`, (v.text || '').split('\n')[0].slice(0, 80)); }}>
-          <span className="rail-ic"><I.share /></span><span>Поделиться</span></button>
+          <span className="rail-ic"><I.share /></span></button>
         <button className={'rail-btn rail-speed' + (rate !== 1 ? ' on' : '')} onClick={() => { const i = SPEEDS.indexOf(rate); setRate(SPEEDS[(i + 1) % SPEEDS.length]); haptic(); }}>
-          <span className="rail-ic"><b>{rate}x</b></span><span>Скорость</span></button>
+          <span className="rail-ic"><b>{rate}x</b></span></button>
         <div className="rail-views"><span className="rail-ic"><I.eye /></span><span>{fmt(v.views)}</span></div>
       </aside>
       <div className="slide-info">
         <div className="slide-ch">
           <button className="slide-chname" onClick={() => onChannel(v.channel)}>{ch ? ch.title : v.channel}</button>
           <button className="btn-sub" onClick={() => { openTg(v.channel); if (!St.isFollowing(v.channel)) St.toggleFollow(v.channel, v.cat); }}>
-            <I.plane width="13" height="13" />Подписаться</button>
+            <I.plane width="11" height="11" />Подписаться</button>
         </div>
         <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {v.game || catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
         {v.text && <p className={'slide-text' + (more ? ' open' : '')} onClick={() => setMore(!more)}>{v.text}</p>}
@@ -132,61 +147,78 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
       <div className="slide-progress"><i ref={bar} /></div>
     </section>
   );
-}
+});
 
-export default function Feed({ list: initial, start = 0, chMap, mode, embedded, tabs, onTab, onClose, onChannel, onBroken, onMore, paused }) {
+const Empty = memo(function Empty() { return <section className="slide slide-empty" />; });
+
+export default function Feed({ list: initial, start = 0, chMap, fresh, mode, embedded, tabs, onTab, onClose, onChannel, onBroken, onMore, paused }) {
   const box = useRef(null);
   const [list, setList] = useState(initial);
   const [active, setActive] = useState(start);
-  const [muted, setMutedState] = useState(!soundOn);
+  const [readyKey, setReadyKey] = useState(null);       // текущий ролик уже играет — можно качать следующий
+  const [clear, setClear] = useState(false);             // «чистый экран» как в TikTok: только видео
   const [rate, setRateState] = useState(speed);
   const setRate = useCallback(r => { speed = r; setRateState(r); }, []);
   const [, force] = useState(0);
   const watch = useRef({ key: null, max: 0, last: 0, total: 0 });
-  const setMuted = useCallback(m => setMutedState(m), []);
+  const S = useRef({}); S.current = { list, active, mode, chMap, onMore };
 
   useEffect(() => St.onChange(() => force(x => x + 1)), []);
   useEffect(() => { if (embedded) return; const off = backButton(true, onClose); return () => { off(); backButton(false); }; }, [embedded, onClose]);
-  // новая лента (другая вкладка / обновились данные) — начинаем сверху
+  // новая лента (другая вкладка / обновили) — начинаем сверху
   useEffect(() => { setList(initial); setActive(start); const el = box.current; if (el) el.scrollTop = start * el.clientHeight; }, [initial]); // eslint-disable-line
 
   // учёт времени просмотра (с учётом повторов по кругу)
   const tick = useCallback((v, t) => {
     const w = watch.current;
-    if (w.key !== v.key) { watch.current = { key: v.key, max: 0, last: t, total: 0 }; return; }
+    if (w.key !== v.key) { watch.current = { key: v.key, max: 0, last: t, total: 0, v }; return; }
     if (t + 0.5 < w.last) w.total += w.last;
     w.last = t; w.max = Math.max(w.max, w.total + t);
   }, []);
   const flush = useCallback(() => {
-    const w = watch.current, v = list.find(x => x.key === w.key);
-    if (v && w.max > 0) St.watched(v, w.max);
+    const w = watch.current;
+    if (w.v && w.max > 0) St.watched(w.v, w.max);
     watch.current = { key: null, max: 0, last: 0, total: 0 };
-  }, [list]);
+  }, []);
   useEffect(() => () => flush(), []); // eslint-disable-line
+  const onReady = useCallback(k => setReadyKey(k), []);
 
-  const onScroll = () => {
-    const el = box.current; if (!el) return;
+  // какой ролик сейчас на экране — определяем, когда лента остановилась
+  const settle = useCallback(() => {
+    const el = box.current, { list, active, mode, chMap, onMore } = S.current; if (!el) return;
     const i = Math.round(el.scrollTop / el.clientHeight);
     if (i === active || i < 0 || i >= list.length) return;
     flush(); setActive(i);
-    if (mode === 'foryou' && i % 3 === 0) setList(l => rerankTail(l, i + 2, chMap));   // подстраиваем остаток ленты под новые интересы
-    if (onMore && i > list.length - 5) { const add = onMore(list); if (add && add.length) setList(l => l.concat(add)); }  // бесконечная лента
-  };
+    // остальное — когда ролик уже пошёл, чтобы не мешать
+    setTimeout(() => {
+      if (mode === 'foryou' && i % 3 === 0) setList(l => rerankTail(l, i + 4, chMap));   // подстраиваем ближайшие ролики под новые интересы
+      if (onMore && i > list.length - 8) { const add = onMore(list); if (add && add.length) setList(l => l.concat(add)); }  // бесконечная лента
+    }, 400);
+  }, [flush]);
+  const timer = useRef(0);
+  const onScroll = () => { clearTimeout(timer.current); timer.current = setTimeout(settle, hasScrollEnd ? 250 : 90); };
+  useEffect(() => {
+    const el = box.current; if (!el || !hasScrollEnd) return;
+    const f = () => { clearTimeout(timer.current); settle(); };
+    el.addEventListener('scrollend', f); return () => el.removeEventListener('scrollend', f);
+  }, [settle, list.length > 0]); // eslint-disable-line
 
   const goChannel = useCallback(u => { flush(); onChannel(u); }, [flush, onChannel]);
-  // включить звук прямо в момент касания (так требует iPhone)
-  const unmuteNow = () => {
-    soundOn = true; setMutedState(false);
-    const vids = box.current ? box.current.querySelectorAll('video') : [];
-    vids.forEach(el => { el.muted = false; if (!el.paused) el.play().catch(() => {}); });
+  // Щипок двумя пальцами: развести — спрятать кнопки и текст, свести — вернуть
+  const pinch = useRef(null);
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const onTouchStart = e => { if (e.touches.length === 2) pinch.current = { d: dist(e.touches), done: false }; };
+  const onTouchMove = e => {
+    const p = pinch.current; if (!p || p.done || e.touches.length !== 2) return;
+    const k = dist(e.touches) / p.d;
+    if (k > 1.25 && !clear) { p.done = true; setClear(true); haptic('light'); }
+    else if (k < 0.8 && clear) { p.done = true; setClear(false); haptic('light'); }
   };
-  const toggleMute = () => {
-    if (muted) return unmuteNow();
-    setMutedState(true); (box.current ? box.current.querySelectorAll('video') : []).forEach(el => { el.muted = true; });
-  };
+  const onTouchEnd = e => { if (e.touches.length < 2) pinch.current = null; };
   const tabIndex = tabs ? tabs.findIndex(t => t[0] === mode) : -1;
+  const curReady = list[active] && readyKey === list[active].key;
   return (
-    <div className={'feed' + (embedded ? ' embedded' : '')}>
+    <div className={'feed' + (embedded ? ' embedded' : '') + (clear ? ' clear' : '')} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
       <div className="feed-top">
         {embedded ? <span className="feed-side" /> : <button className="feed-btn" onClick={() => { flush(); onClose(); }}><I.back width="20" height="20" /></button>}
         {tabs ? (
@@ -195,14 +227,21 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
             <i />
           </div>
         ) : <span className="feed-title">{{ channel: 'Канал', profile: 'Моё', explore: 'Обзор', trends: 'Тренды', follow: 'Подписки' }[mode] || 'Лента'}</span>}
-        <button className="feed-btn" onClick={toggleMute}>{muted ? <I.mute width="19" height="19" /> : <I.sound width="19" height="19" />}</button>
+        <span className="feed-side" />
       </div>
       {list.length ? (
         <div className="feed-scroll" ref={box} onScroll={onScroll}>
-          {list.map((v, i) => Math.abs(i - active) > 2
-            ? <section key={v.uid || v.key} className="slide slide-empty" />
-            : <Slide key={v.uid || v.key} v={v} ch={chMap[v.channel]} active={i === active} near={Math.abs(i - active) <= 1} next={i === active + 1} muted={muted} setMuted={setMuted} rate={rate} setRate={setRate}
-              paused={paused} onChannel={goChannel} onBroken={onBroken} tick={tick} />)}
+          {list.map((v, i) => {
+            const d = i - active, key = v.uid || v.key;
+            if (d < -1 || d > 3) return <Empty key={key} />;
+            const withVideo = d >= -1 && d <= 2;
+            // текущий качаем полностью; следующий — как только текущий заиграл; остальные — только начало
+            const preload = d === 0 ? 'auto' : d === 1 && curReady ? 'auto' : 'metadata';
+            return <Slide key={key} v={v} fresh={fresh && fresh[v.key]} ch={chMap[v.channel]} active={d === 0} withVideo={withVideo} preload={preload}
+              liked={St.isLiked(v.key)} saved={St.isSaved(v.key)} follow={St.isFollowing(v.channel)}
+              rate={rate} setRate={setRate} paused={paused}
+              onChannel={goChannel} onBroken={onBroken} onReady={onReady} tick={tick} />;
+          })}
         </div>
       ) : (
         <div className="feed-empty"><div className="empty-emoji">👀</div><b>Пока пусто</b><p>{mode === 'follow' ? 'Подпишись на каналы кнопкой «+» у аватара — их ролики будут здесь.' : 'Ролики скоро появятся.'}</p></div>

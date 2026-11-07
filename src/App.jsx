@@ -18,12 +18,19 @@ export default function App() {
   const [seed, setSeed] = useState(() => Date.now());
   const [, force] = useState(0);
 
+  // Сначала берём «лёгкую» ленту (~300 лучших роликов, грузится за секунду) и сразу показываем,
+  // а полную (2000+ роликов) докачиваем в фоне — лента при этом не прыгает.
+  const got = useRef(false);
   const load = useCallback(async (fresh) => {
+    const get = async url => { const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
     try {
-      const r = await fetch(fresh ? API + '?t=' + Date.now() : API);   // без лишних параметров — ответ берётся из кэша мгновенно
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      setData(await r.json()); setError('');
-    } catch (e) { setError('Не получилось загрузить ленту'); }
+      if (!fresh && !got.current) {
+        const lite = await get(API + '?lite=1').catch(() => null);
+        if (lite && lite.videos && lite.videos.length && !got.current) { setData(d => d || lite); setError(''); }
+      }
+      const full = await get(fresh ? API + '?t=' + Date.now() : API);   // без лишних параметров — ответ из кэша мгновенно
+      got.current = true; setData(full); setError('');
+    } catch (e) { if (!got.current) setError('Не получилось загрузить ленту'); }
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => St.onChange(() => force(x => x + 1)), []);
@@ -31,20 +38,26 @@ export default function App() {
   useEffect(() => { const t = setInterval(() => load(true), 20 * 60 * 1000); return () => clearInterval(t); }, [load]);
 
   const chMap = useMemo(() => Object.fromEntries((data ? data.channels : []).map(c => [c.username, c])), [data]);
-  const videos = data ? data.videos : [];
+  const videos = useMemo(() => data ? data.videos : [], [data]);
+  const fresh = useMemo(() => Object.fromEntries(videos.map(v => [v.key, v])), [videos]);   // свежие ссылки по ключу ролика
+  const R = useRef({}); R.current = { videos, chMap };
+  const ready = videos.length > 0;
 
-  // главная лента
-  const mainList = useMemo(() => feedTab === 'trends' ? trending(videos) : feedTab === 'follow' ? following(videos) : forYou(videos, chMap, seed),
-    [videos, chMap, feedTab, seed]); // eslint-disable-line
+  // главная лента: считаем заново только при смене вкладки или «обновить», а не когда докачались данные
+  const mainList = useMemo(() => {
+    const { videos, chMap } = R.current;
+    return feedTab === 'trends' ? trending(videos) : feedTab === 'follow' ? following(videos) : forYou(videos, chMap, seed);
+  }, [feedTab, seed, ready]); // eslint-disable-line
   // бесконечная лента: когда ролики заканчиваются — добавляем ещё (сначала непросмотренные)
   const round = useRef(0);
   const more = useCallback(list => {
     if (feedTab === 'follow') return [];
+    const { videos, chMap } = R.current;
     const have = new Set(list.map(v => v.key));
     const rest = videos.filter(v => !have.has(v.key));
     const r = ++round.current;   // у повторных роликов свой ключ, чтобы React не путал их с уже показанными
     return (rest.length ? forYou(rest, chMap, Date.now()) : forYou(videos, chMap, Date.now())).slice(0, 30).map(v => ({ ...v, uid: v.key + '#' + r }));
-  }, [videos, chMap, feedTab]);
+  }, [feedTab]);
 
   // ролик не загрузился — возможно, устарела ссылка: берём свежую ленту (не чаще раза в минуту)
   const broken = useRef(0);
@@ -53,6 +66,9 @@ export default function App() {
   const byChannel = u => videos.filter(v => v.channel === u).sort((a, b) => new Date(b.date) - new Date(a.date));
   const openOverlay = (list, start, mode) => setOverlay({ list, start, mode });
   const closeOverlay = useCallback(() => setOverlay(null), []);
+  const toChannel = useCallback(u => setChannel(u), []);
+  const fromOverlayToChannel = useCallback(u => { setOverlay(null); setChannel(u); window.scrollTo(0, 0); }, []);
+  const onTab = useCallback(t => { setFeedTab(t); setSeed(Date.now()); }, []);
   const go = id => { setChannel(null); setOverlay(null); if (id === 'feed' && nav === 'feed') setSeed(Date.now()); setNav(id); window.scrollTo(0, 0); };
 
   if (!data) return error
@@ -65,8 +81,8 @@ export default function App() {
     <div className={'app' + (onFeed ? ' on-feed' : '')}>
       {/* главная — лента на весь экран; не размонтируем, чтобы при возврате остаться на том же ролике */}
       <div style={{ display: onFeed ? 'block' : 'none' }}>
-        <Feed list={mainList} chMap={chMap} mode={feedTab} embedded tabs={FEED_TABS} onTab={t => { setFeedTab(t); setSeed(Date.now()); }}
-          onChannel={u => setChannel(u)} onBroken={onBroken} onMore={more} paused={!onFeed || !!overlay} />
+        <Feed list={mainList} chMap={chMap} fresh={fresh} mode={feedTab} embedded tabs={FEED_TABS} onTab={onTab}
+          onChannel={toChannel} onBroken={onBroken} onMore={more} paused={!onFeed || !!overlay} />
       </div>
       {!onFeed && (
         <main key={channel || nav} className="screen">
@@ -92,8 +108,7 @@ export default function App() {
         <button className={nav === 'news' && !channel ? 'on' : ''} onClick={() => go('news')}><I.news /><span>Новости</span></button>
         <button className={nav === 'profile' && !channel ? 'on' : ''} onClick={() => go('profile')}><I.user /><span>Профиль</span></button>
       </nav>
-      {overlay && <Feed {...overlay} chMap={chMap} onClose={closeOverlay} onBroken={onBroken}
-        onChannel={u => { setOverlay(null); setChannel(u); window.scrollTo(0, 0); }} />}
+      {overlay && <Feed {...overlay} chMap={chMap} fresh={fresh} onClose={closeOverlay} onBroken={onBroken} onChannel={fromOverlayToChannel} />}
     </div>
   );
 }
