@@ -5,6 +5,13 @@ const { parseChannel } = require('../api/_tg.js');
 const { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey } = require('../api/_clean.js');
 const db = require('../api/_db.js');
 const CHANNELS = require('../api/_channels.js');
+const fs = require('fs');
+
+// Пишем итог прямо на страницу запуска в GitHub, чтобы не лазить по логам
+function report(md) {
+  console.log(md.replace(/[`*#]/g, ''));
+  try { if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n'); } catch (e) {}
+}
 
 const PARALLEL = 10;
 const MAX_DURATION = 180;
@@ -72,7 +79,7 @@ async function main() {
   const t0 = Date.now();
   // 1) связь с базой — проверяем первым делом, чтобы не собирать зря
   try { await db.check(); console.log('база: связь есть'); }
-  catch (e) { console.error('БАЗА НЕДОСТУПНА:', e.message); process.exit(1); }
+  catch (e) { report(`## ❌ База недоступна\n\n\`\`\`\n${e.message}\n\`\`\``); process.exit(1); }
 
   const queue = CHANNELS.slice(), loaded = [], errors = [];
   await Promise.all(Array.from({ length: PARALLEL }, async () => {
@@ -86,7 +93,7 @@ async function main() {
   // 2) что удалось скачать — печатаем ДО записи в базу, иначе при сбое записи не видно причины
   console.log(`каналов скачано ${loaded.length} из ${CHANNELS.length}, за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
   if (errors.length) console.log(`не ответили ${errors.length}:`, errors.slice(0, 8).join(' | '));
-  if (!loaded.length) { console.error('НИ ОДИН КАНАЛ НЕ ОТВЕТИЛ — похоже, Telegram не пускает сервер GitHub'); process.exit(1); }
+  if (!loaded.length) { report('## ❌ Ни один канал не ответил\n\nПохоже, Telegram не пускает серверы GitHub.'); process.exit(1); }
 
   const authors = loaded.map(({ cfg, channel, reach }) => ({
     username: cfg.username, title: channel.title || cfg.username, avatar: channel.avatar || null,
@@ -110,7 +117,13 @@ async function main() {
   await db.rpc('refresh_scores');
   if (new Date().getUTCHours() === 4) await db.rpc('cleanup');    // уборка раз в сутки
 
-  console.log(`ГОТОВО: видео ${videos.length}, повторов ${videos.filter(v => v.spread > 1).length}, ` +
-    `всего за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
+  report(`## ✅ Готово\n\n| | |\n|---|---|\n| каналов | ${loaded.length} из ${CHANNELS.length} |\n` +
+    `| авторов записано | ${a.rows} |\n| видео записано | ${v.rows} |\n` +
+    `| повторов из разных каналов | ${videos.filter(x => x.spread > 1).length} |\n` +
+    `| заняло | ${((Date.now() - t0) / 1000).toFixed(1)}с |`);
 }
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch(e => {
+  report(`## ❌ Сборщик упал\n\n\`\`\`\n${(e && e.message) || e}\n\`\`\``);
+  console.error(e);
+  process.exit(1);
+});
