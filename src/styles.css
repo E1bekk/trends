@@ -228,11 +228,12 @@ h1, h2, h3 { margin: 0; }
 @keyframes feedIn { from { opacity: 0; transform: scale(1.04); } }
 .feed-scroll { position: absolute; inset: 0; overflow-y: scroll; scroll-snap-type: y mandatory; overscroll-behavior: contain; scrollbar-width: none; }
 .feed-scroll::-webkit-scrollbar { display: none; }
-.slide { position: relative; height: 100vh; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #000; }
+.slide { position: relative; height: 100vh; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #000; contain: strict; }
+.slide-empty { background: #050508; }
 .slide-media { position: absolute; inset: 0; }
 .slide-poster, .slide-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .slide-poster.cover, .slide-video.cover { object-fit: cover; }
-.slide-poster:not(.cover) { object-fit: cover; filter: blur(30px) brightness(.55); transform: scale(1.2); }
+.slide-poster:not(.cover) { object-fit: cover; opacity: .3; }
 .slide-poster-fit { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .slide-loader { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .slide-loader i { width: 44px; height: 44px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .2); border-top-color: #fff; border-right-color: var(--p); animation: spin .8s linear infinite; }
@@ -282,3 +283,16 @@ h1, h2, h3 { margin: 0; }
 .slide-text.open { -webkit-line-clamp: 14; max-height: 42vh; overflow-y: auto; }
 .slide-progress { position: absolute; z-index: 2; left: 10px; right: 10px; bottom: calc(10px + var(--safe-b)); height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .2); overflow: hidden; }
 .slide-progress i { display: block; height: 100%; background: var(--aurora); transform-origin: left; }
+
+/* ---- скорость: поверх видео никаких размытий и вечных анимаций (они съедают FPS на телефоне) ---- */
+.feed .feed-btn, .feed .feed-hint, .feed .rail-ic, .feed .slide-tags span { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.feed .feed-btn { background: rgba(0, 0, 0, .45); }
+.feed .feed-hint { background: rgba(0, 0, 0, .7); }
+.feed .rail-ic { background: rgba(0, 0, 0, .35); }
+.feed .slide-tags span { background: rgba(0, 0, 0, .45); }
+.feed .slide-paused svg, .feed .slide-burst svg { filter: none; }
+.app.on-feed .tabbar, body:has(.feed:not(.embedded)) .tabbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(8, 8, 14, .94); box-shadow: none; }
+.app.on-feed .tab-center span::before { animation: none; }
+.app.on-feed .tabbar button.on svg { filter: none; }
+.feed-scroll { -webkit-overflow-scrolling: touch; }
+.slide-video, .slide-poster { will-change: auto; }

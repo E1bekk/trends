@@ -4,19 +4,22 @@
 const { parseChannel } = require('./_tg');
 const CHANNELS = require('./_channels');
 
-const PAGES = 2; // сколько страниц истории брать с каждого канала (~20 постов на страницу)
-const PARALLEL = 8; // сколько каналов качаем одновременно
+// сколько страниц истории брать с канала (~20 постов на страницу): развлекательных — больше, новостных — одну
+const PAGES = { news: 1, other: 3 };
+const PARALLEL = 10; // сколько каналов качаем одновременно
+const short = (t, n) => (t && t.length > n ? t.slice(0, n).trimEnd() + '…' : t || ''); // ответ меньше — лента грузится быстрее
 
 async function fetchPage(username, before) {
   const url = `https://t.me/s/${username}${before ? `?before=${before}` : ''}`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TrendsBot/0.1)', 'Accept-Language': 'ru' } });
+  const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TrendsBot/0.1)', 'Accept-Language': 'ru' } });
   if (!r.ok) throw new Error(`${username}: HTTP ${r.status}`);
   return r.text();
 }
 
 async function loadChannel(cfg) {
   let channel = null, posts = [], before = 0;
-  for (let i = 0; i < PAGES; i++) {
+  const pages = cfg.cat === 'news' ? PAGES.news : PAGES.other;
+  for (let i = 0; i < pages; i++) {
     const res = parseChannel(await fetchPage(cfg.username, before), cfg.username);
     if (!channel) channel = res.channel;
     if (!res.posts.length) break;
@@ -43,11 +46,11 @@ module.exports = async (req, res) => {
     const { channel, posts } = r.value;
     channels.push(channel);
     for (const p of posts) {
-      const base = { key: `${channel.username}/${p.id}`, channel: channel.username, id: p.id, text: p.text, views: p.views, date: p.date, cat: channel.cat };
-      if (p.video && p.duration > 0 && p.duration <= 180) videos.push(Object.assign(base, { video: p.video, thumb: p.thumb, duration: p.duration, ratio: p.ratio }));
+      const base = { key: `${channel.username}/${p.id}`, channel: channel.username, id: p.id, text: short(p.text, channel.cat === 'news' ? 600 : 220), views: p.views, date: p.date, cat: channel.cat };
+      if (p.video && p.duration > 0 && p.duration <= 180 && channel.cat !== 'news') videos.push(Object.assign(base, { video: p.video, thumb: p.thumb, duration: p.duration, ratio: p.ratio }));
       else if (channel.cat === 'news' && p.text && p.text.length > 40) news.push(Object.assign(base, { photo: p.photo || '' }));
     }
   }
-  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
+  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
   res.status(200).json({ updated: new Date().toISOString(), channels, videos, news, errors });
 };

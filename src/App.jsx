@@ -20,7 +20,7 @@ export default function App() {
 
   const load = useCallback(async (fresh) => {
     try {
-      const r = await fetch(API + '?t=' + (fresh ? Date.now() : Math.floor(Date.now() / 3e5)));
+      const r = await fetch(fresh ? API + '?t=' + Date.now() : API);   // без лишних параметров — ответ берётся из кэша мгновенно
       if (!r.ok) throw new Error('HTTP ' + r.status);
       setData(await r.json()); setError('');
     } catch (e) { setError('Не получилось загрузить ленту'); }
@@ -37,11 +37,13 @@ export default function App() {
   const mainList = useMemo(() => feedTab === 'trends' ? trending(videos) : feedTab === 'follow' ? following(videos) : forYou(videos, chMap, seed),
     [videos, chMap, feedTab, seed]); // eslint-disable-line
   // бесконечная лента: когда ролики заканчиваются — добавляем ещё (сначала непросмотренные)
+  const round = useRef(0);
   const more = useCallback(list => {
     if (feedTab === 'follow') return [];
     const have = new Set(list.map(v => v.key));
     const rest = videos.filter(v => !have.has(v.key));
-    return (rest.length ? forYou(rest, chMap, Date.now()) : forYou(videos, chMap, Date.now())).slice(0, 30);
+    const r = ++round.current;   // у повторных роликов свой ключ, чтобы React не путал их с уже показанными
+    return (rest.length ? forYou(rest, chMap, Date.now()) : forYou(videos, chMap, Date.now())).slice(0, 30).map(v => ({ ...v, uid: v.key + '#' + r }));
   }, [videos, chMap, feedTab]);
 
   // ролик не загрузился — возможно, устарела ссылка: берём свежую ленту (не чаще раза в минуту)

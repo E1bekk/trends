@@ -11,11 +11,11 @@ import { openTg, share, haptic, backButton } from '../lib/tg';
 
 let soundOn = false; // звук включается после первого касания и дальше остаётся включённым
 
-function Slide({ v, ch, active, near, muted, setMuted, onChannel, onBroken, tick, paused: pausedOutside }) {
+function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken, tick, paused: pausedOutside }) {
   const ref = useRef(null);
   const [paused, setPaused] = useState(false);
   const [vertical, setVertical] = useState(v.ratio < 1);
-  const [progress, setProgress] = useState(0);
+  const bar = useRef(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [burst, setBurst] = useState(0);
@@ -68,10 +68,10 @@ function Slide({ v, ch, active, near, muted, setMuted, onChannel, onBroken, tick
       <div className="slide-media" onClick={onTap}>
         {v.thumb && <img className={'slide-poster' + (vertical ? ' cover' : '')} src={v.thumb} alt="" />}
         {v.thumb && !vertical && <img className="slide-poster-fit" src={v.thumb} alt="" />}
-        {near && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={v.video} loop playsInline muted preload={active ? 'auto' : 'metadata'}
+        {near && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={v.video} loop playsInline muted preload={active || next ? 'auto' : 'metadata'}
           onLoadedMetadata={e => setVertical(e.target.videoHeight > e.target.videoWidth * 1.15)}
           onWaiting={() => setLoading(true)} onPlaying={() => { setLoading(false); setFailed(false); }} onCanPlay={() => setLoading(false)}
-          onTimeUpdate={e => { const t = e.target; setProgress(t.duration ? t.currentTime / t.duration : 0); tick(v, t.currentTime); }}
+          onTimeUpdate={e => { const t = e.target; if (bar.current) bar.current.style.transform = `scaleX(${t.duration ? t.currentTime / t.duration : 0})`; tick(v, t.currentTime); }}
           onError={onError} />}
         {active && loading && !failed && <span className="slide-loader"><i /></span>}
         {failed && <span className="slide-failed"><b>Видео не загрузилось</b><button onClick={e => { e.stopPropagation(); retry(); }}><I.refresh width="18" height="18" />Ещё раз</button>
@@ -102,7 +102,7 @@ function Slide({ v, ch, active, near, muted, setMuted, onChannel, onBroken, tick
         <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
         {v.text && <p className={'slide-text' + (more ? ' open' : '')} onClick={() => setMore(!more)}>{v.text}</p>}
       </div>
-      <div className="slide-progress"><i style={{ transform: `scaleX(${progress})` }} /></div>
+      <div className="slide-progress"><i ref={bar} /></div>
     </section>
   );
 }
@@ -140,10 +140,11 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
     const i = Math.round(el.scrollTop / el.clientHeight);
     if (i === active || i < 0 || i >= list.length) return;
     flush(); setActive(i);
-    if (mode === 'foryou' && i % 2 === 0) setList(l => rerankTail(l, i, chMap));   // подстраиваем остаток ленты под новые интересы
+    if (mode === 'foryou' && i % 3 === 0) setList(l => rerankTail(l, i + 2, chMap));   // подстраиваем остаток ленты под новые интересы
     if (onMore && i > list.length - 5) { const add = onMore(list); if (add && add.length) setList(l => l.concat(add)); }  // бесконечная лента
   };
 
+  const goChannel = useCallback(u => { flush(); onChannel(u); }, [flush, onChannel]);
   // включить звук прямо в момент касания (так требует iPhone)
   const unmuteNow = () => {
     soundOn = true; setMutedState(false);
@@ -169,10 +170,10 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
       </div>
       {list.length ? (
         <div className="feed-scroll" ref={box} onScroll={onScroll}>
-          {list.map((v, i) => (
-            <Slide key={v.key + ':' + i} v={v} ch={chMap[v.channel]} active={i === active} near={Math.abs(i - active) <= 1} muted={muted} setMuted={setMuted}
-              paused={paused} onChannel={u => { flush(); onChannel(u); }} onBroken={onBroken} tick={tick} />
-          ))}
+          {list.map((v, i) => Math.abs(i - active) > 2
+            ? <section key={v.uid || v.key} className="slide slide-empty" />
+            : <Slide key={v.uid || v.key} v={v} ch={chMap[v.channel]} active={i === active} near={Math.abs(i - active) <= 1} next={i === active + 1} muted={muted} setMuted={setMuted}
+              paused={paused} onChannel={goChannel} onBroken={onBroken} tick={tick} />)}
         </div>
       ) : (
         <div className="feed-empty"><div className="empty-emoji">👀</div><b>Пока пусто</b><p>{mode === 'follow' ? 'Подпишись на каналы кнопкой «+» у аватара — их ролики будут здесь.' : 'Ролики скоро появятся.'}</p></div>

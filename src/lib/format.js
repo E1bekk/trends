@@ -13,6 +13,7 @@ export function ago(iso) {
 }
 // категории: название, эмодзи, цвет
 export const CATS = {
+  animals: ['Животные', '🐾', '#ff9ed2'],
   humor: ['Юмор', '😂', '#ffb13d'], wow: ['Вау', '🤯', '#3df0ff'], nature: ['Природа', '🌿', '#3ddc84'],
   sport: ['Спорт', '⚽', '#4d8bff'], games: ['Игры', '🎮', '#a46bff'], style: ['Стиль', '👗', '#ff5fb4'],
   news: ['Новости', '📰', '#ff6a3d'], auto: ['Авто', '🏎️', '#ff3d5a'], music: ['Музыка', '🎵', '#ff3d81'], food: ['Еда', '🍜', '#ffcf3d']
