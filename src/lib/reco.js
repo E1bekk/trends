@@ -40,6 +40,10 @@ export function forYou(videos, chMap, seed = Date.now()) {
     if (seen) s *= 0.15 + Math.min(0.5, (Date.now() - seen) / 864e5 / 4);   // просмотренное — вниз
     return { v, s: s * (0.9 + 0.2 * r()) };
   }).sort((a, b) => b.s - a.s);
+  // чем больше роликов одного канала уже выше в списке, тем ниже следующий — ни один канал не забивает ленту
+  const perCh = {};
+  scored.forEach(x => { const k = perCh[x.v.channel] = (perCh[x.v.channel] || 0) + 1; x.s *= Math.pow(0.86, k - 1); });
+  scored.sort((a, b) => b.s - a.s);
   // ~15% мест — «на пробу» из того, что человек ещё не видел
   const out = [], rest = scored.slice(), explore = scored.filter(x => !S.seen[x.v.key]).slice(Math.floor(scored.length / 3));
   while (rest.length) {
@@ -47,7 +51,7 @@ export function forYou(videos, chMap, seed = Date.now()) {
     if (!cold && explore.length && r() < 0.15) { const e = explore.splice(Math.floor(r() * explore.length), 1)[0]; pick = rest.indexOf(e); if (pick < 0) pick = 0; }
     // разнообразие: не два ролика одного канала подряд и не больше одной новости из трёх
     const last = out[out.length - 1], recentNews = out.slice(-2).some(x => x.cat === 'news');
-    const bad = x => (last && x.v.channel === last.channel) || (recentNews && x.v.cat === 'news');
+    const bad = x => (last && (x.v.channel === last.channel || (x.v.game && x.v.game === last.game))) || (recentNews && x.v.cat === 'news');
     if (bad(rest[pick])) { const j = rest.findIndex(x => !bad(x)); if (j > 0) pick = j; }
     out.push(rest.splice(pick, 1)[0].v);
   }

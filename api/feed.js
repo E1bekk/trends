@@ -5,8 +5,9 @@ const { parseChannel } = require('./_tg');
 const CHANNELS = require('./_channels');
 
 // сколько страниц истории брать с канала (~20 постов на страницу): развлекательных — больше, новостных — одну
-const PAGES = { news: 1, other: 3 };
-const PARALLEL = 10; // сколько каналов качаем одновременно
+const PAGES = 2;
+const PER_CHANNEL = 30; // не больше стольких роликов с одного канала — чтобы ни один не забивал ленту
+const PARALLEL = 12; // сколько каналов качаем одновременно
 const short = (t, n) => (t && t.length > n ? t.slice(0, n).trimEnd() + '…' : t || ''); // ответ меньше — лента грузится быстрее
 
 async function fetchPage(username, before) {
@@ -18,7 +19,7 @@ async function fetchPage(username, before) {
 
 async function loadChannel(cfg) {
   let channel = null, posts = [], before = 0;
-  const pages = cfg.cat === 'news' ? PAGES.news : PAGES.other;
+  const pages = cfg.pages || PAGES;
   for (let i = 0; i < pages; i++) {
     const res = parseChannel(await fetchPage(cfg.username, before), cfg.username);
     if (!channel) channel = res.channel;
@@ -29,7 +30,7 @@ async function loadChannel(cfg) {
   const seen = new Set(); posts = posts.filter(p => !seen.has(p.id) && seen.add(p.id));
   const views = posts.map(p => p.views).filter(Boolean).sort((a, b) => a - b);
   const reach = views.length ? views[Math.floor(views.length / 2)] : 0;               // охват: медиана просмотров поста
-  Object.assign(channel, { country: cfg.country, cat: cfg.cat, reach, err: channel.subscribers ? +(reach / channel.subscribers * 100).toFixed(1) : 0, postsCount: posts.length });
+  Object.assign(channel, { country: cfg.country, cat: cfg.cat, game: cfg.game || '', reach, err: channel.subscribers ? +(reach / channel.subscribers * 100).toFixed(1) : 0, postsCount: posts.length });
   return { channel, posts };
 }
 
@@ -45,9 +46,11 @@ module.exports = async (req, res) => {
     if (r.status !== 'fulfilled') { errors.push(String(r.reason && r.reason.message || r.reason)); continue; }
     const { channel, posts } = r.value;
     channels.push(channel);
-    for (const p of posts) {
-      const base = { key: `${channel.username}/${p.id}`, channel: channel.username, id: p.id, text: short(p.text, channel.cat === 'news' ? 600 : 220), views: p.views, date: p.date, cat: channel.cat };
-      if (p.video && p.duration > 0 && p.duration <= 180 && channel.cat !== 'news') videos.push(Object.assign(base, { video: p.video, thumb: p.thumb, duration: p.duration, ratio: p.ratio }));
+    let count = 0;
+    for (const p of posts.slice().sort((x, y) => y.id - x.id)) {
+      const base = { key: `${channel.username}/${p.id}`, channel: channel.username, id: p.id, text: short(p.text, channel.cat === 'news' ? 600 : 160), views: p.views, date: p.date, cat: channel.cat };
+      if (channel.game) base.game = channel.game;
+      if (p.video && p.duration > 0 && p.duration <= 180 && channel.cat !== 'news') { if (count++ < PER_CHANNEL) videos.push(Object.assign(base, { video: p.video, thumb: p.thumb, duration: p.duration, ratio: p.ratio })); }
       else if (channel.cat === 'news' && p.text && p.text.length > 40) news.push(Object.assign(base, { photo: p.photo || '' }));
     }
   }

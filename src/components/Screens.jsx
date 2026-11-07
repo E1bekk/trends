@@ -52,6 +52,8 @@ export const Empty = ({ emoji, title, text, action }) => (
 // ---------- обзор: поиск, каналы-«истории», подборки, категории, плитка ----------
 export function Explore({ videos, chMap, onOpen, onStory }) {
   const [tab, setTab] = useState('popular'), [cat, setCat] = useState('all'), [query, setQuery] = useState('');
+  const [game, setGame] = useState('');
+  const games = useMemo(() => { const m = {}; videos.forEach(v => { if (v.game) m[v.game] = (m[v.game] || 0) + 1; }); return Object.keys(m).sort((a, b) => m[b] - m[a]); }, [videos]);
   const [seed] = useState(() => Date.now());
   const tabs = [['popular', 'Популярное'], ['trends', 'Тренды'], ['new', 'Новое']];
   const ti = tabs.findIndex(t => t[0] === tab);
@@ -60,10 +62,11 @@ export function Explore({ videos, chMap, onOpen, onStory }) {
   const items = useMemo(() => {
     let list = tab === 'trends' ? trending(videos) : tab === 'new' ? videos.slice().sort((a, b) => new Date(b.date) - new Date(a.date)) : forYou(videos, chMap, seed);
     if (cat !== 'all') list = list.filter(v => v.cat === cat);
+    if (cat === 'games' && game) list = list.filter(v => v.game === game);
     const q = query.trim().toLowerCase();
     if (q) list = list.filter(v => (v.text || '').toLowerCase().includes(q) || ((chMap[v.channel] || {}).title || '').toLowerCase().includes(q));
     return list;
-  }, [videos, chMap, tab, cat, query, seed]);
+  }, [videos, chMap, tab, cat, game, query, seed]);
   // «истории»: сначала свои подписки, потом каналы с самыми горячими роликами
   const stories = useMemo(() => {
     const S = St.state(), seen = new Set(), out = [];
@@ -89,8 +92,12 @@ export function Explore({ videos, chMap, onOpen, onStory }) {
       </div>
       <div className="chips">
         <button className={'chip' + (cat === 'all' ? ' on' : '')} onClick={() => setCat('all')}>✨ Всё</button>
-        {cats.map(c => <button key={c} className={'chip' + (cat === c ? ' on' : '')} style={{ '--c': catColor(c) }} onClick={() => setCat(c)}>{catEmoji(c)} {catName(c)}</button>)}
+        {cats.map(c => <button key={c} className={'chip' + (cat === c ? ' on' : '')} style={{ '--c': catColor(c) }} onClick={() => { setCat(c); setGame(''); }}>{catEmoji(c)} {catName(c)}</button>)}
       </div>
+      {cat === 'games' && games.length > 0 && <div className="chips chips-sub">
+        <button className={'chip' + (!game ? ' on' : '')} onClick={() => setGame('')}>Все игры</button>
+        {games.map(x => <button key={x} className={'chip' + (game === x ? ' on' : '')} onClick={() => setGame(x)}>{x}</button>)}
+      </div>}
       <Masonry items={items} onOpen={i => onOpen(items, i)} hot={hot}
         empty={<Empty emoji="🔍" title="Ничего не нашлось" text="Попробуй другое слово или категорию." />} />
     </div>

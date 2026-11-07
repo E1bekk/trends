@@ -10,8 +10,20 @@ import { rerankTail } from '../lib/reco';
 import { openTg, share, haptic, backButton } from '../lib/tg';
 
 let soundOn = false; // звук включается после первого касания и дальше остаётся включённым
+const SPEEDS = [1, 1.5, 2, 0.5];
+let speed = 1;       // выбранная скорость — одна на всю ленту
 
-function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken, tick, paused: pausedOutside }) {
+// Полный экран для горизонтального видео (как в TikTok): на iPhone — системный плеер, он сам поворачивается
+function fullscreen(el) {
+  if (!el) return;
+  try {
+    if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); return; }
+    const p = el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen && el.webkitRequestFullscreen();
+    Promise.resolve(p).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+  } catch (e) {}
+}
+
+function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken, tick, rate, setRate, paused: pausedOutside }) {
   const ref = useRef(null);
   const [paused, setPaused] = useState(false);
   const [vertical, setVertical] = useState(v.ratio < 1);
@@ -21,6 +33,9 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
   const [burst, setBurst] = useState(0);
   const [more, setMore] = useState(false);
   const lastTap = useRef(0), tries = useRef(0);
+  const [fast, setFast] = useState(false);              // удержание пальца — ускорение ×2
+  const hold = useRef({ t: 0, x: 0, y: 0, fired: false });
+  useEffect(() => { const el = ref.current; if (el) el.playbackRate = fast ? 2 : rate; }, [rate, fast, near, active]);
   const liked = St.isLiked(v.key), saved = St.isSaved(v.key), follow = St.isFollowing(v.channel);
 
   // для iPhone: беззвучный автозапуск разрешён только с атрибутами muted + playsinline
@@ -41,7 +56,15 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
 
   // Касание обрабатываем СРАЗУ (иначе iPhone не даёт включить звук):
   // первое касание — звук/пауза, второе быстрое — лайк (и пауза отменяется).
+  const onDown = e => {
+    const h = hold.current; h.fired = false; h.x = e.clientX; h.y = e.clientY;
+    clearTimeout(h.t);
+    h.t = setTimeout(() => { h.fired = true; setFast(true); haptic('light'); }, 380);
+  };
+  const onMove = e => { const h = hold.current; if (!h.fired && Math.hypot(e.clientX - h.x, e.clientY - h.y) > 12) clearTimeout(h.t); };
+  const onUp = () => { const h = hold.current; clearTimeout(h.t); if (h.fired) setFast(false); };
   const onTap = () => {
+    if (hold.current.fired) { hold.current.fired = false; return; }   // это было удержание, а не касание
     const el = ref.current, now = Date.now();
     if (now - lastTap.current < 300) {
       lastTap.current = 0;
@@ -65,7 +88,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
 
   return (
     <section className="slide">
-      <div className="slide-media" onClick={onTap}>
+      <div className="slide-media" onClick={onTap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onContextMenu={e => e.preventDefault()}>
         {v.thumb && <img className={vertical ? 'slide-poster cover' : 'slide-poster-fit'} src={v.thumb} alt="" />}
         {near && <video ref={ref} className={'slide-video' + (vertical ? ' cover' : '')} src={v.video} loop playsInline muted preload={active || next ? 'auto' : 'metadata'}
           onLoadedMetadata={e => setVertical(e.target.videoHeight > e.target.videoWidth * 1.15)}
@@ -75,7 +98,10 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
         {active && loading && !failed && <span className="slide-loader"><i /></span>}
         {failed && <span className="slide-failed"><b>Видео не загрузилось</b><button onClick={e => { e.stopPropagation(); retry(); }}><I.refresh width="18" height="18" />Ещё раз</button>
           <button className="ghost" onClick={e => { e.stopPropagation(); openTg(`${v.channel}/${v.id}`); }}>Открыть в Telegram</button></span>}
-        {paused && !failed && <span className="slide-paused"><I.play width="70" height="70" /></span>}
+        {paused && !failed && <span className="slide-paused"><I.play width="64" height="64" /></span>}
+        {fast && <span className="slide-fast">2x ▶▶</span>}
+        {!vertical && !failed && near && <button className="slide-full" style={{ top: `calc(50% + ${50 / Math.max(1.05, v.ratio || 1.78)}vw + 12px)` }}
+          onClick={e => { e.stopPropagation(); fullscreen(ref.current); }}><I.expand width="15" height="15" />Полный экран</button>}
         {burst > 0 && <span key={burst} className="slide-burst"><I.heart fill width="110" height="110" /></span>}
       </div>
       <div className="slide-shade" />
@@ -90,6 +116,8 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
           <span className="rail-ic"><I.bookmark fill={saved} /></span><span>{saved ? 'Сохранено' : 'Сохранить'}</span></button>
         <button className="rail-btn" onClick={() => { St.shared(v); share(`${v.channel}/${v.id}`, (v.text || '').split('\n')[0].slice(0, 80)); }}>
           <span className="rail-ic"><I.share /></span><span>Поделиться</span></button>
+        <button className={'rail-btn rail-speed' + (rate !== 1 ? ' on' : '')} onClick={() => { const i = SPEEDS.indexOf(rate); setRate(SPEEDS[(i + 1) % SPEEDS.length]); haptic(); }}>
+          <span className="rail-ic"><b>{rate}x</b></span><span>Скорость</span></button>
         <div className="rail-views"><span className="rail-ic"><I.eye /></span><span>{fmt(v.views)}</span></div>
       </aside>
       <div className="slide-info">
@@ -98,7 +126,7 @@ function Slide({ v, ch, active, near, next, muted, setMuted, onChannel, onBroken
           <button className="btn-sub" onClick={() => { openTg(v.channel); if (!St.isFollowing(v.channel)) St.toggleFollow(v.channel, v.cat); }}>
             <I.plane width="13" height="13" />Подписаться</button>
         </div>
-        <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
+        <div className="slide-tags"><span style={{ '--c': catColor(v.cat) }}>{catEmoji(v.cat)} {v.game || catName(v.cat)}</span>{ch && <span>{COUNTRIES[ch.country]} {fmt(ch.subscribers)}</span>}</div>
         {v.text && <p className={'slide-text' + (more ? ' open' : '')} onClick={() => setMore(!more)}>{v.text}</p>}
       </div>
       <div className="slide-progress"><i ref={bar} /></div>
@@ -111,6 +139,8 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
   const [list, setList] = useState(initial);
   const [active, setActive] = useState(start);
   const [muted, setMutedState] = useState(!soundOn);
+  const [rate, setRateState] = useState(speed);
+  const setRate = useCallback(r => { speed = r; setRateState(r); }, []);
   const [, force] = useState(0);
   const watch = useRef({ key: null, max: 0, last: 0, total: 0 });
   const setMuted = useCallback(m => setMutedState(m), []);
@@ -171,7 +201,7 @@ export default function Feed({ list: initial, start = 0, chMap, mode, embedded, 
         <div className="feed-scroll" ref={box} onScroll={onScroll}>
           {list.map((v, i) => Math.abs(i - active) > 2
             ? <section key={v.uid || v.key} className="slide slide-empty" />
-            : <Slide key={v.uid || v.key} v={v} ch={chMap[v.channel]} active={i === active} near={Math.abs(i - active) <= 1} next={i === active + 1} muted={muted} setMuted={setMuted}
+            : <Slide key={v.uid || v.key} v={v} ch={chMap[v.channel]} active={i === active} near={Math.abs(i - active) <= 1} next={i === active + 1} muted={muted} setMuted={setMuted} rate={rate} setRate={setRate}
               paused={paused} onChannel={goChannel} onBroken={onBroken} tick={tick} />)}
         </div>
       ) : (

@@ -16,6 +16,7 @@ export const I = {
   eye: p => <S {...p} d={<><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.8" /></>} />,
   check: p => <S {...p} d={<path d="m5 12.5 4.5 4.5L19 7.5" />} />,
   play: p => <S {...p} fill d={<path d="M8 5.5v13l10.5-6.5z" />} />,
+  expand: p => <S {...p} d={<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />} />,
   close: p => <S {...p} d={<path d="M6 6l12 12M18 6 6 18" />} />,
   back: p => <S {...p} d={<path d="M15 5 8 12l7 7" />} />,
   mute: p => <S {...p} d={<><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path d="m16 9.5 5 5M21 9.5l-5 5" /></>} />,
