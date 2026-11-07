@@ -103,9 +103,10 @@ async function main() {
   for (const v of videos) v.spread = spread[v.dup_key].size;
 
   // 3) запись
-  await db.upsertAll('authors', authors, 'username');
-  console.log(`авторов записано ${authors.length}`);
-  await db.upsertAll('videos', videos, 'id');
+  const a = await db.upsertAll('authors', authors, 'username');
+  console.log(`авторов записано ${a.rows} (порций ${a.batches})`);
+  const v = await db.upsertAll('videos', videos, 'id');
+  console.log(`видео записано ${v.rows} (порций ${v.batches})`);
   await db.rpc('refresh_scores');
   if (new Date().getUTCHours() === 4) await db.rpc('cleanup');    // уборка раз в сутки
 

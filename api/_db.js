@@ -37,9 +37,41 @@ const patch = (table, query, body) => rest(`${table}?${query}`, { method: 'PATCH
 const remove = (table, query) => rest(`${table}?${query}`, { method: 'DELETE', prefer: 'return=minimal' });
 const rpc = (fn, args = {}) => rest(`rpc/${fn}`, { method: 'POST', body: args });
 
-// отправляем большими пачками, но не бесконечными — иначе запрос не пролезет
-async function upsertAll(table, rows, onConflict, size = 400) {
-  for (let i = 0; i < rows.length; i += size) await upsert(table, rows.slice(i, i + size), onConflict);
+// Шлём порциями: Supabase не принимает большой кусок целиком и отвечает
+// «Empty or invalid json». Ограничиваем и по числу записей, и по весу.
+const MAX_ROWS = 100;
+const MAX_BYTES = 150 * 1024;
+
+// Если порция не прошла — делим пополам и пробуем снова. Так большой кусок дойдёт по частям,
+// а если дело в одной битой записи, мы дойдём до неё и покажем её целиком.
+async function sendBatch(table, rows, onConflict) {
+  try {
+    await upsert(table, rows, onConflict);
+  } catch (e) {
+    if (rows.length === 1) throw new Error(`${e.message}\n  не принята запись: ${JSON.stringify(rows[0]).slice(0, 400)}`);
+    const half = Math.ceil(rows.length / 2);
+    await sendBatch(table, rows.slice(0, half), onConflict);
+    await sendBatch(table, rows.slice(half), onConflict);
+  }
+}
+
+async function upsertAll(table, rows, onConflict) {
+  // одинаковые ключи в одной порции Postgres не принимает — оставляем последнюю запись
+  if (onConflict && rows.length) {
+    const seen = new Map();
+    for (const r of rows) seen.set(r[onConflict], r);
+    rows = [...seen.values()];
+  }
+  const batches = [];
+  let cur = [], bytes = 0;
+  for (const r of rows) {
+    const n = JSON.stringify(r).length + 1;
+    if (cur.length && (cur.length >= MAX_ROWS || bytes + n > MAX_BYTES)) { batches.push(cur); cur = []; bytes = 0; }
+    cur.push(r); bytes += n;
+  }
+  if (cur.length) batches.push(cur);
+  for (const b of batches) await sendBatch(table, b, onConflict);
+  return { rows: rows.length, batches: batches.length };
 }
 
 // Короткая проверка связи: сразу говорим, что не так, а не падаем на полпути
