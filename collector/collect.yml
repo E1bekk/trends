@@ -1,0 +1,21 @@
+name: Сборщик видео
+on:
+  schedule:
+    - cron: '*/20 * * * *'     # каждые 20 минут
+  workflow_dispatch:           # и вручную кнопкой во вкладке Actions
+concurrency:
+  group: collect
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node collector/collect.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

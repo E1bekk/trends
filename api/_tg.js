@@ -1,6 +1,7 @@
 // Разбор публичной страницы канала t.me/s/<имя> — без аккаунта Telegram и без API-ключей.
 // Достаём: название, аватар, подписчиков канала; у постов — видео, обложку, длительность,
-// пропорции кадра, просмотры, текст и дату.
+// пропорции кадра, просмотры, реакции, текст, дату и «переслано из».
+// Просмотры и реакции Telegram нужны только алгоритму — человеку показываем наши цифры.
 const unesc = s => String(s || '')
   .replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
   .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
@@ -33,7 +34,15 @@ function parseChannel(html, username) {
     const views = num(pick(part, /tgme_widget_message_views">([^<]+)</));
     const date = pick(part, /<time datetime="([^"]+)"/);
     const src = pick(part, /<video[^>]+src="([^"]+)"/);
-    const p = { id: +id, text, views, date };
+    // реакции: нужны алгоритму как подсказка «зашло или нет», на экран не выводятся
+    let reacts = 0;
+    for (const m of part.matchAll(/class="tgme_reaction"[^>]*>([\s\S]*?)<\/span>/g)) {
+      const tail = m[1].replace(/<[^>]+>/g, '').trim().match(/([\d.,]+\s*[KMB]?)$/i);   // «😁204» — число в конце
+      reacts += tail ? num(tail[1]) : 1;
+    }
+    const from = unesc(pick(part, /tgme_widget_message_forwarded_from_name[^>]*>([\s\S]*?)<\/a>/)).slice(0, 60);
+    const p = { id: +id, text, views, date, reacts };
+    if (from) p.from = from;
     if (src) {
       p.video = src.replace(/&amp;/g, '&');
       p.thumb = pick(part, /tgme_widget_message_video_thumb"[^>]*background-image:url\('([^']+)'/);
