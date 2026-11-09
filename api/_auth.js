@@ -13,10 +13,19 @@ function inspect(initData, token = process.env.BOT_TOKEN) {
   const hash = q.get('hash');
   if (!hash) return { why: 'в данных от Telegram нет подписи' };
   q.delete('hash');
-  q.delete('signature');
-  const check = [...q.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n');
+  // Новые версии Telegram присылают ещё поле signature. Для проверки по ключу бота
+  // его надо учитывать наравне с остальными, но старые версии его не шлют —
+  // поэтому пробуем оба варианта и принимаем тот, что сошёлся.
   const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
-  const mine = crypto.createHmac('sha256', secret).update(check).digest('hex');
+  const variants = [[...q.entries()]];
+  if (q.has('signature')) variants.push([...q.entries()].filter(([k]) => k !== 'signature'));
+  let mine = '';
+  for (const fields of variants) {
+    const check = fields.map(([k, v]) => `${k}=${v}`).sort().join('\n');
+    const got = crypto.createHmac('sha256', secret).update(check).digest('hex');
+    if (got === hash) { mine = got; break; }
+    mine = got;
+  }
   let a, b;
   try { a = Buffer.from(mine, 'hex'); b = Buffer.from(hash, 'hex'); } catch (e) { return { why: 'подпись испорчена' }; }
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b))

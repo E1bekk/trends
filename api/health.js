@@ -44,8 +44,20 @@ module.exports = async (req, res) => {
       BOT_TOKEN_похож_на_токен: /^\d{6,12}:[A-Za-z0-9_-]{30,}$/.test(process.env.BOT_TOKEN || ''),
       BOT_TOKEN_номер_бота: String(process.env.BOT_TOKEN || '').split(':')[0] || 'нет'
     },
-    база: 'не проверяли', таблицы: {}, функции: {}, надо_выполнить: []
+    бот: 'не проверяли', база: 'не проверяли', таблицы: {}, функции: {}, надо_выполнить: []
   };
+  // Спрашиваем у самого Telegram, чей это токен. Имя бота не секрет, а ответ решает спор.
+  const tok = process.env.BOT_TOKEN || '';
+  if (!tok) out.бот = 'BOT_TOKEN не задан';
+  else {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${tok}/getMe`, { signal: AbortSignal.timeout(8000) });
+      const j = await r.json();
+      out.бот = j && j.ok ? '@' + j.result.username + ' (' + (j.result.first_name || '') + ')'
+                          : 'Telegram отверг токен: ' + ((j && j.description) || r.status);
+    } catch (e) { out.бот = 'не дозвонились до Telegram: ' + String(e.message || e).slice(0, 60); }
+  }
+
   try { await db.check(); out.база = 'связь есть'; }
   catch (e) { out.база = 'НЕТ СВЯЗИ: ' + e.message; return res.status(200).json(out); }
 
