@@ -11,7 +11,10 @@ drop function if exists chat_group(bigint, text, bigint[]);
 drop function if exists chats_of(bigint);
 drop function if exists chat_open(bigint, text, int, int);
 drop function if exists chat_send(bigint, text, text, text, text, text, text, text);
+drop function if exists chat_send(bigint, text, text, text, text, text, text, text, text, real, int[], text, bigint);
+drop function if exists chat_open(bigint, text, int, int);
 drop function if exists chat_read(bigint, text);
+drop function if exists video_one(bigint, text);
 
 -- ---------- друзья по ссылке-приглашению ----------
 create or replace function invite_make(p_user bigint) returns text
@@ -122,15 +125,18 @@ $$;
 create or replace function chat_open(p_user bigint, p_chat text, p_limit int default 50, p_skip int default 0)
 returns table (id bigint, user_id bigint, user_name text, user_photo text, kind text, body text,
                at timestamptz, mine boolean, video_id text, video_thumb text, video_caption text,
-               shelf_id text, shelf_title text, shelf_items int)
+               shelf_id text, shelf_title text, shelf_items int,
+               media_url text, media_sec real, wave int[], sticker_id text, sticker_url text, reply_to bigint)
 language sql stable as $$
   select m.id, m.user_id, m.user_name, m.user_photo, m.kind, m.body, m.at,
          m.user_id = p_user,
          m.video_id, v.thumb_url, v.caption,
-         m.shelf_id, s.title, s.items
+         m.shelf_id, s.title, s.items,
+         m.media_url, m.media_sec, m.wave, m.sticker_id, st.url, m.reply_to
   from messages m
   left join videos v on v.id = m.video_id
   left join shelves s on s.id = m.shelf_id
+  left join stickers st on st.id = m.sticker_id
   where m.chat_id = p_chat and m.hidden = false
     and exists (select 1 from chat_members cm where cm.chat_id = p_chat and cm.user_id = p_user)
   order by m.id desc
@@ -139,32 +145,69 @@ $$;
 
 create or replace function chat_send(p_user bigint, p_name text, p_photo text, p_chat text,
                                      p_kind text default 'text', p_body text default null,
-                                     p_video text default null, p_shelf text default null)
+                                     p_video text default null, p_shelf text default null,
+                                     p_media text default null, p_sec real default null,
+                                     p_wave int[] default null, p_sticker text default null,
+                                     p_reply bigint default null)
 returns jsonb language plpgsql as $$
 declare new_id bigint;
 begin
   if not exists (select 1 from chat_members where chat_id = p_chat and user_id = p_user) then
     raise exception 'ты не в этом чате';
   end if;
-  if p_kind = 'text' and coalesce(btrim(p_body), '') = '' then raise exception 'пустое сообщение'; end if;
+  if p_kind = 'text'  and coalesce(btrim(p_body), '') = '' then raise exception 'пустое сообщение'; end if;
+  if p_kind = 'voice' and coalesce(btrim(p_media), '') = '' then raise exception 'нет записи'; end if;
+  -- стикер можно слать только из набора, который человек себе добавил
+  if p_kind = 'sticker' and not exists (
+       select 1 from stickers s join user_packs up on up.pack = s.pack
+        where s.id = p_sticker and up.user_id = p_user)
+  then raise exception 'этот набор у тебя не добавлен'; end if;
 
-  insert into messages (chat_id, user_id, user_name, user_photo, kind, body, video_id, shelf_id)
+  insert into messages (chat_id, user_id, user_name, user_photo, kind, body,
+                        video_id, shelf_id, media_url, media_sec, wave, sticker_id, reply_to)
     values (p_chat, p_user, p_name, p_photo, p_kind,
             case when p_kind = 'text' then left(btrim(p_body), 2000) else nullif(btrim(coalesce(p_body, '')), '') end,
-            p_video, p_shelf)
+            p_video, p_shelf, p_media, p_sec, p_wave, p_sticker,
+            (select id from messages r where r.id = p_reply and r.chat_id = p_chat))
     returning id into new_id;
+
+  if p_kind = 'sticker' then perform sticker_bump(p_sticker); end if;
   update chats set last_at = now() where id = p_chat;
   update chat_members set last_read = new_id where chat_id = p_chat and user_id = p_user;
 
   return (select to_jsonb(x) from (
     select m.id, m.user_id, m.user_name, m.user_photo, m.kind, m.body, m.at, true as mine,
            m.video_id, v.thumb_url as video_thumb, v.caption as video_caption,
-           m.shelf_id, s.title as shelf_title, s.items as shelf_items
-    from messages m left join videos v on v.id = m.video_id left join shelves s on s.id = m.shelf_id
+           m.shelf_id, s.title as shelf_title, s.items as shelf_items,
+           m.media_url, m.media_sec, m.wave, m.sticker_id, st.url as sticker_url, m.reply_to
+    from messages m
+    left join videos v on v.id = m.video_id
+    left join shelves s on s.id = m.shelf_id
+    left join stickers st on st.id = m.sticker_id
     where m.id = new_id) x);
 end $$;
 
 create or replace function chat_read(p_user bigint, p_chat text) returns void language sql as $$
   update chat_members set last_read = coalesce((select max(id) from messages where chat_id = p_chat), 0)
    where chat_id = p_chat and user_id = p_user;
+$$;
+
+-- Один ролик целиком — чтобы открыть видео, присланное в чат
+create or replace function video_one(p_user bigint, p_id text)
+returns table (
+  id text, author text, author_title text, avatar text,
+  caption text, tags text[], cat text, game text, lang text,
+  duration int, ratio real, video_url text, thumb_url text, posted_at timestamptz,
+  views int, likes int, comments int, saves int, shares int,
+  liked boolean, saved boolean, following boolean
+) language sql stable as $$
+  select v.id, v.author, au.title, au.avatar,
+         v.caption, v.tags, v.cat, v.game, v.lang,
+         v.duration, v.ratio, v.video_url, v.thumb_url, v.posted_at,
+         v.views, v.likes, v.comments, v.saves, v.shares,
+         exists (select 1 from actions x where x.user_id = p_user and x.video_id = v.id and x.kind = 'like'),
+         exists (select 1 from actions x where x.user_id = p_user and x.video_id = v.id and x.kind = 'save'),
+         exists (select 1 from follows f where f.user_id = p_user and f.author = v.author)
+  from videos v join authors au on au.username = v.author
+  where v.id = p_id and v.blocked = false;
 $$;

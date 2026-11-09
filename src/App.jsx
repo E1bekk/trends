@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { I } from './components/Icons';
 import Feed from './components/Feed';
 import { Explore, News, Profile } from './components/Screens';
-import { getFeed } from './lib/api';
+import { Chats } from './components/Chats';
+import { Together } from './components/Together';
+import { getFeed, acceptInvite, getVideo, getShelf, joinRoom } from './lib/api';
+import { startParam } from './lib/tg';
 import { CATS } from './lib/format';
 import * as St from './lib/store';
 
@@ -13,13 +16,15 @@ export const VIBES = ['humor', 'wow', 'animals', 'games', 'sport', 'auto', 'food
 const PAGE = 20;
 
 export default function App() {
-  const [nav, setNav] = useState('feed');          // feed | explore | profile
+  const [nav, setNav] = useState('feed');          // feed | news | explore | chats | profile
   const [mode, setMode] = useState('foryou');
   const [vibe, setVibe] = useState('');
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [overlay, setOverlay] = useState(null);    // ролики, открытые из обзора или профиля
+  const [room, setRoom] = useState(null);          // комната «смотрим вместе»
+  const [toChat, setToChat] = useState(null);      // чат из ссылки в уведомлении
   const more = useRef({ skip: 0, busy: false, done: false });
 
   const load = useCallback(async (reset) => {
@@ -54,6 +59,26 @@ export default function App() {
     load(true);
   }, [load]);
 
+  // пришли по ссылке-приглашению: сразу становимся друзьями и открываем чаты
+  useEffect(() => {
+    const p = startParam();
+    if (!p) return;
+    // позвали в друзья
+    if (p.startsWith('inv_')) acceptInvite(p.slice(4)).then(() => setNav('chats')).catch(() => {});
+    // скинули полку — открываем её сразу роликами
+    if (p.startsWith('sh_')) getShelf(p.slice(3))
+      .then(r => r.videos && r.videos.length && setOverlay({ list: r.videos, start: 0 })).catch(() => {});
+    // позвали смотреть вместе
+    // в уведомлении была кнопка «Открыть» — ведёт в нужный чат
+    if (p.startsWith('chat_')) { setToChat(p.slice(5)); setNav('chats'); }
+    if (p.startsWith('rm_')) { const rid = p.slice(3); joinRoom(rid).then(r => r.ok && setRoom(rid)).catch(() => {}); }
+  }, []);
+
+  // видео, присланное в чат, открываем как обычный ролик
+  const openFromChat = useCallback(id => {
+    getVideo(id).then(r => r.video && setOverlay({ list: [r.video], start: 0 })).catch(() => {});
+  }, []);
+
   const onNeedMore = useCallback(() => load(false), [load]);
   const go = id => { St.flush(); setOverlay(null); setNav(id); window.scrollTo(0, 0); };
   const openList = useCallback((videos, start) => setOverlay({ list: videos, start }), []);
@@ -72,13 +97,14 @@ export default function App() {
       <div style={{ display: onFeed ? 'block' : 'none' }}>
         <Feed list={list} loading={loading} embedded tabs={TABS} mode={mode} onTab={setMode}
           vibes={VIBES} vibe={vibe} onVibe={setVibe}
-          onNeedMore={onNeedMore} onBroken={onBroken} paused={!onFeed || !!overlay} />
+          onNeedMore={onNeedMore} onBroken={onBroken} paused={!onFeed || !!overlay || !!room} />
       </div>
 
       {!onFeed && (
         <main key={nav} className="screen">
           {nav === 'explore' ? <Explore onOpen={openList} />
             : nav === 'news' ? <News />
+            : nav === 'chats' ? <Chats onOpenVideo={openFromChat} onRoom={setRoom} openId={toChat} />
             : <Profile onOpen={openList} />}
         </main>
       )}
@@ -88,10 +114,12 @@ export default function App() {
         <button className={nav === 'news' ? 'on' : ''} onClick={() => go('news')}><I.news /><span>Новости</span></button>
         <button className={'tab-center' + (nav === 'explore' ? ' on' : '')} onClick={() => go('explore')} aria-label="Обзор">
           <span><I.compass width="26" height="26" /></span><small>Обзор</small></button>
+        <button className={nav === 'chats' ? 'on' : ''} onClick={() => go('chats')}><I.users /><span>Чаты</span></button>
         <button className={nav === 'profile' ? 'on' : ''} onClick={() => go('profile')}><I.user /><span>Профиль</span></button>
       </nav>
 
       {overlay && <Feed list={overlay.list} start={overlay.start} onClose={closeOverlay} onBroken={onBroken} />}
+      {room && <Together id={room} onClose={() => setRoom(null)} />}
     </div>
   );
 }

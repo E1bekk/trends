@@ -1,0 +1,29 @@
+# Отправщик уведомлений. Положить в .github/workflows/notify.yml
+name: Уведомления
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'     # каждые 5 минут
+  workflow_dispatch:           # и кнопкой вручную
+
+concurrency:
+  group: notify
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Отправить письма из очереди
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          BOT_USERNAME: scroll_app_bot
+          APP_SHORT: app
+        run: node collector/notify.js

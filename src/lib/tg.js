@@ -48,3 +48,22 @@ export function ask(text) {
   if (tg && tg.showConfirm) return new Promise(ok => { try { tg.showConfirm(text, v => ok(!!v)); } catch (e) { ok(window.confirm(text)); } });
   return Promise.resolve(window.confirm(text));
 }
+
+// Чем приложение открыли: в ссылке ?startapp=... Telegram кладёт сюда
+export const startParam = () => (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '';
+
+// Поделиться готовой ссылкой (приглашение другу)
+export function shareUrl(url, text) {
+  const link = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text || '');
+  if (inTelegram && tg.openTelegramLink) tg.openTelegramLink(link);
+  else if (navigator.share) navigator.share({ url, text }).catch(() => {});
+  else window.open(link, '_blank');
+}
+
+// Спросить у Telegram разрешение писать человеку от бота (для уведомлений)
+export function askWrite() {
+  return new Promise(ok => {
+    if (!tg || !tg.requestWriteAccess) return ok(false);
+    try { tg.requestWriteAccess(v => ok(!!v)); } catch (e) { ok(false); }
+  });
+}

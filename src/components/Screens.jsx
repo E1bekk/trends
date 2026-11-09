@@ -4,6 +4,7 @@ import { I, Avatar } from './Icons';
 import { fmt, dur, ago, CATS, catName, catEmoji, catColor, tagLabel } from '../lib/format';
 import { getFeed, getMine, getProfile, getNews, getNewsTopics, addCover, delCover } from '../lib/api';
 import { pickPhoto } from '../lib/photo';
+import { Shelves } from './Shelves';
 import * as St from '../lib/store';
 import { tgUser, openTg, haptic, ask } from '../lib/tg';
 
@@ -94,7 +95,9 @@ export function Explore({ onOpen }) {
           </button>
         ))}
       </div>
-      {loading
+      {tab === 'shelf'
+        ? <Shelves onOpen={onOpen} />
+        : loading
         ? <div className="masonry">{[0, 1].map(k => <div key={k} className="mcol">{[1.5, 1.1, 1.6].map((t, i) => <span key={i} className="sk sk-card" style={{ aspectRatio: `1 / ${t}` }} />)}</div>)}</div>
         : <Masonry items={shown} onOpen={onOpen}
             empty={<Empty emoji="🔍" title="Ничего не нашлось" text="Попробуй другое слово или тему." />} />}
@@ -162,7 +165,7 @@ function Cover({ covers, onChange }) {
 }
 
 // ---------- профиль ----------
-const MY = [['save', 'Сохранённое', '🔖'], ['like', 'Лайки', '❤️'], ['history', 'История', '🕘']];
+const MY = [['save', 'Сохранённое', '🔖'], ['like', 'Лайки', '❤️'], ['history', 'История', '🕘'], ['shelf', 'Полки', '🗂']];
 export function Profile({ onOpen }) {
   const [tab, setTab] = useState('save');
   const [items, setItems] = useState([]);
@@ -174,6 +177,7 @@ export function Profile({ onOpen }) {
 
   useEffect(() => { getProfile().then(r => { setInfo(r.profile || {}); setSrvMe(r.me || null); }).catch(e => setErr(e.message)); }, []);
   useEffect(() => {
+    if (tab === 'shelf') { setLoading(false); return; }
     let gone = false; setLoading(true);
     getMine({ kind: tab, limit: 40 })
       .then(r => { if (!gone) { setItems(r.videos || []); setLoading(false); } })
@@ -216,7 +220,9 @@ export function Profile({ onOpen }) {
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{em} {name}</button>
         ))}
       </div>
-      {loading
+      {tab === 'shelf'
+        ? <Shelves onOpen={onOpen} />
+        : loading
         ? <div className="masonry">{[0, 1].map(k => <div key={k} className="mcol">{[1.5, 1.2].map((t, i) => <span key={i} className="sk sk-card" style={{ aspectRatio: `1 / ${t}` }} />)}</div>)}</div>
         : <Masonry items={items} onOpen={onOpen}
             empty={<Empty emoji={tab === 'save' ? '🔖' : tab === 'like' ? '❤️' : '🕘'}

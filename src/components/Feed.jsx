@@ -146,7 +146,7 @@ const Slide = memo(function Slide({ v, blob, active, warm, withVideo, preload, l
 
 const Blank = memo(function Blank() { return <section className="slide slide-empty" />; });
 
-export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, onTab, vibes, vibe, onVibe, onClose, onBroken, paused, start = 0 }) {
+export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, onTab, vibes, vibe, onVibe, onClose, onBroken, paused, start = 0, onIndex, goTo }) {
   const box = useRef(null);
   const [active, setActive] = useState(start);
   const [readyId, setReadyId] = useState(null);
@@ -167,6 +167,13 @@ export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, 
   useEffect(() => { if (embedded) return; const off = backButton(true, onClose); return () => { off(); backButton(false); }; }, [embedded, onClose]);
   // сменили вкладку или вайб — возвращаемся наверх
   useEffect(() => { setActive(0); const el = box.current; if (el) el.scrollTop = 0; }, [mode, vibe]);
+  // комната «смотрим вместе»: наружу — на каком мы ролике, внутрь — куда перейти за ведущим
+  useEffect(() => { if (onIndex) onIndex(active); }, [active, onIndex]);
+  useEffect(() => {
+    if (goTo == null || goTo === active) return;
+    const el = box.current;
+    if (el) el.scrollTo({ top: goTo * el.clientHeight, behavior: 'smooth' });
+  }, [goTo]); // eslint-disable-line
 
   const tick = useCallback((v, t) => {
     const w = watch.current;

@@ -112,8 +112,14 @@ async function check() {
 // ---------- хранилище картинок (Supabase Storage) ----------
 // Фото фона профиля лежат в отдельной корзине. Корзину заводим сами при первой загрузке,
 // руками в панели ничего создавать не надо.
-const BUCKET = 'covers';
-let bucketReady = false;
+// Корзины: обложки профиля, стикеры, голосовые. Заводим сами при первой записи,
+// руками в панели Supabase создавать ничего не надо.
+const BUCKETS = {
+  covers:   { limit: 4000000, types: ['image/jpeg', 'image/png', 'image/webp'] },
+  stickers: { limit: 2000000, types: ['image/webp', 'image/png', 'video/webm', 'application/gzip'] },
+  voice:    { limit: 4000000, types: ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg'] }
+};
+const madeBucket = new Set();
 
 async function storage(path, { method = 'GET', body, type } = {}) {
   if (!ready()) throw new Error('База не настроена: нет SUPABASE_URL или SUPABASE_SERVICE_KEY');
@@ -129,35 +135,38 @@ async function storage(path, { method = 'GET', body, type } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-async function makeBucket() {
-  if (bucketReady) return;
+async function makeBucket(bucket) {
+  if (madeBucket.has(bucket)) return;
+  const cfg = BUCKETS[bucket];
+  if (!cfg) throw new Error('неизвестная корзина ' + bucket);
   try {
     await storage('bucket', {
       method: 'POST', type: 'application/json',
-      body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true, file_size_limit: 4000000,
-        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'] })
+      body: JSON.stringify({ id: bucket, name: bucket, public: true, file_size_limit: cfg.limit, allowed_mime_types: cfg.types })
     });
   } catch (e) {
     // «уже есть» — это нормально, всё остальное — настоящая ошибка
     if (!/already exists|Duplicate|409/i.test(e.message)) throw e;
   }
-  bucketReady = true;
+  madeBucket.add(bucket);
 }
 
-// кладём картинку, получаем постоянную ссылку
-async function putImage(name, buf, type) {
-  await makeBucket();
-  await storage(`object/${BUCKET}/${name}`, { method: 'POST', body: buf, type });
-  return `${URL}/storage/v1/object/public/${BUCKET}/${name}`;
+// кладём файл, получаем постоянную ссылку
+async function putFile(bucket, name, buf, type) {
+  await makeBucket(bucket);
+  await storage(`object/${bucket}/${name}`, { method: 'POST', body: buf, type });
+  return `${URL}/storage/v1/object/public/${bucket}/${name}`;
 }
 
-// убираем картинку по её ссылке; чужие ссылки игнорируем
-async function delImage(url) {
-  const mark = `/storage/v1/object/public/${BUCKET}/`;
-  const i = String(url || '').indexOf(mark);
-  if (i < 0) return false;
-  try { await storage(`object/${BUCKET}/${url.slice(i + mark.length)}`, { method: 'DELETE' }); } catch (e) {}
+// убираем файл по его ссылке; чужие ссылки игнорируем
+async function delFile(url) {
+  const m = String(url || '').match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+  if (!m || !BUCKETS[m[1]]) return false;
+  try { await storage(`object/${m[1]}/${m[2]}`, { method: 'DELETE' }); } catch (e) {}
   return true;
 }
 
-module.exports = { ready, check, keyInfo, scrub, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL, putImage, delImage };
+const putImage = (name, buf, type) => putFile('covers', name, buf, type);
+const delImage = url => delFile(url);
+
+module.exports = { ready, check, keyInfo, scrub, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL, putFile, delFile, putImage, delImage };

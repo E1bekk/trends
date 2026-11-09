@@ -17,6 +17,12 @@ module.exports = async (req, res) => {
     // подписаться или отписаться
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      // разрешил боту писать — включаем уведомления
+      if (body.write !== undefined) {
+        await db.rpc('notify_set', { p_user: me.id, p_can: !!body.write, p_want: body.notify === undefined ? null : !!body.notify });
+        return res.status(200).json({ ok: true });
+      }
+
       const author = String(body.follow || '');
       if (!/^[A-Za-z0-9_]{3,40}$/.test(author)) return res.status(400).json({ error: 'плохое имя канала' });
       if (await db.rpc('hit_limit', { p_user: me.id, p_kind: 'follow', p_max: 60, p_seconds: 300 }))

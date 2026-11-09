@@ -41,6 +41,9 @@ export const getNews = ({ topic = '', limit = 30, skip = 0 } = {}) =>
 
 export const getNewsTopics = () => call('/api/news?what=topics');
 
+export const setNotify = (write, notify) =>
+  call('/api/my', { method: 'POST', body: JSON.stringify({ write, notify }) });
+
 export const follow = author =>
   call('/api/my', { method: 'POST', body: JSON.stringify({ follow: author }) });
 
@@ -48,3 +51,43 @@ export const follow = author =>
 export const addCover = photo => call('/api/upload', { method: 'POST', body: JSON.stringify({ photo }) });
 export const delCover = url => call('/api/upload', { method: 'POST', body: JSON.stringify({ del: url }) });
 export const setBio = bio => call('/api/upload', { method: 'POST', body: JSON.stringify({ bio }) });
+
+// друзья и чаты
+export const getChats = () => call('/api/chat');
+export const getFriends = () => call('/api/chat?what=friends');
+export const getInvite = () => call('/api/chat?what=invite');
+export const openChat = (chat, skip = 0) => call(`/api/chat?what=open&chat=${encodeURIComponent(chat)}&skip=${skip}`);
+export const sendMsg = b => call('/api/chat', { method: 'POST', body: JSON.stringify(b) });
+export const acceptInvite = code => call('/api/chat', { method: 'POST', body: JSON.stringify({ accept: code }) });
+export const chatWith = friend => call('/api/chat', { method: 'POST', body: JSON.stringify({ friend }) });
+export const getVideo = id => call(`/api/chat?what=video&id=${encodeURIComponent(id)}`);
+export const makeGroup = (group, members) => call('/api/chat', { method: 'POST', body: JSON.stringify({ group, members }) });
+
+// стикеры
+export const getPacks = () => call('/api/stickers');
+export const getSharedPacks = q => call('/api/stickers?what=shared' + (q ? '&q=' + encodeURIComponent(q) : ''));
+export const addPack = add => call('/api/stickers', { method: 'POST', body: JSON.stringify({ add }) });
+export const sharePack = share => call('/api/stickers', { method: 'POST', body: JSON.stringify({ share }) });
+export const takePack = take => call('/api/stickers', { method: 'POST', body: JSON.stringify({ take }) });
+export const dropPack = drop => call('/api/stickers', { method: 'POST', body: JSON.stringify({ drop }) });
+export const reportPack = report => call('/api/stickers', { method: 'POST', body: JSON.stringify({ report }) });
+
+// полки
+export const getShelves = () => call('/api/shelves');
+export const getShelf = (id, skip = 0) => call(`/api/shelves?id=${encodeURIComponent(id)}&skip=${skip}`);
+export const makeShelf = (make, video) => call('/api/shelves', { method: 'POST', body: JSON.stringify({ make, video }) });
+export const putOnShelf = (put, video) => call('/api/shelves', { method: 'POST', body: JSON.stringify({ put, video }) });
+export const pullFromShelf = (pull, video) => call('/api/shelves', { method: 'POST', body: JSON.stringify({ pull, video }) });
+export const renameShelf = (rename, title) => call('/api/shelves', { method: 'POST', body: JSON.stringify({ rename, title }) });
+export const dropShelf = remove => call('/api/shelves', { method: 'POST', body: JSON.stringify({ remove }) });
+export const takeShelf = take => call('/api/shelves', { method: 'POST', body: JSON.stringify({ take }) });
+
+// комнаты — смотрим вместе
+export const makeRoom = (make, { shelf, videos } = {}) =>
+  call('/api/rooms', { method: 'POST', body: JSON.stringify({ make, shelf, videos }) });
+export const joinRoom = join => call('/api/rooms', { method: 'POST', body: JSON.stringify({ join }) });
+export const leaveRoom = leave => call('/api/rooms', { method: 'POST', body: JSON.stringify({ leave }) });
+export const moveRoom = (move, pos) => call('/api/rooms', { method: 'POST', body: JSON.stringify({ move, pos }) });
+export const reactRoom = (react, video, emoji) => call('/api/rooms', { method: 'POST', body: JSON.stringify({ react, video, emoji }) });
+export const getRoomVideos = id => call(`/api/rooms?what=videos&id=${encodeURIComponent(id)}`);
+export const getRoomState = (id, since = 0) => call(`/api/rooms?id=${encodeURIComponent(id)}&since=${since}`);
