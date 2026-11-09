@@ -50,7 +50,8 @@ export const follow = author =>
 // фон профиля: свои фото наверху страницы
 export const addCover = photo => call('/api/upload', { method: 'POST', body: JSON.stringify({ photo }) });
 export const delCover = url => call('/api/upload', { method: 'POST', body: JSON.stringify({ del: url }) });
-export const setBio = bio => call('/api/upload', { method: 'POST', body: JSON.stringify({ bio }) });
+export const setBio = bio => call('/api/my', { method: 'POST', body: JSON.stringify({ bio }) });
+export const deleteMe = () => call('/api/my', { method: 'POST', body: JSON.stringify({ delete_me: true }) });
 
 // друзья и чаты
 export const getChats = () => call('/api/chat');
@@ -91,3 +92,15 @@ export const moveRoom = (move, pos) => call('/api/rooms', { method: 'POST', body
 export const reactRoom = (react, video, emoji) => call('/api/rooms', { method: 'POST', body: JSON.stringify({ react, video, emoji }) });
 export const getRoomVideos = id => call(`/api/rooms?what=videos&id=${encodeURIComponent(id)}`);
 export const getRoomState = (id, since = 0) => call(`/api/rooms?id=${encodeURIComponent(id)}&since=${since}`);
+
+// админка
+export const getStats = (days = 30) => call(`/api/admin?days=${days}`);
+export const getReports = () => call('/api/admin?what=reports');
+export const getAdminPacks = status => call('/api/admin?what=packs' + (status ? '&status=' + status : ''));
+export const findVideos = q => call('/api/admin?what=videos&q=' + encodeURIComponent(q));
+export const getCands = status => call('/api/admin?what=cands&status=' + (status || 'new'));
+export const modCand = (cand, status, extra = {}) => call('/api/admin', { method: 'POST', body: JSON.stringify({ cand, status, ...extra }) });
+export const modPack = (pack, status, reason) => call('/api/admin', { method: 'POST', body: JSON.stringify({ pack, status, reason }) });
+export const modComment = (comment, hide) => call('/api/admin', { method: 'POST', body: JSON.stringify({ comment, hide }) });
+export const modVideo = (video, block) => call('/api/admin', { method: 'POST', body: JSON.stringify({ video, block }) });
+export const modAuthor = (author, block) => call('/api/admin', { method: 'POST', body: JSON.stringify({ author, block }) });

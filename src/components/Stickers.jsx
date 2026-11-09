@@ -3,7 +3,7 @@
 // В общую библиотеку набор уходит только после проверки ИИ.
 import { useEffect, useState } from 'react';
 import { I } from './Icons';
-import { getPacks, getSharedPacks, addPack, sharePack, takePack, dropPack } from '../lib/api';
+import { getPacks, getSharedPacks, addPack, sharePack, takePack, dropPack, reportPack } from '../lib/api';
 import { haptic, ask } from '../lib/tg';
 
 export function StickerPanel({ onPick, onClose }) {
@@ -48,6 +48,12 @@ export function StickerPanel({ onPick, onClose }) {
     try { const r = await getSharedPacks(''); setLib(r.packs || []); } catch (e) { setNote(e.message); }
   };
 
+  const complain = async name => {
+    if (!(await ask('Пожаловаться на этот набор?'))) return;
+    try { const r = await reportPack(name); setNote(r.already ? 'Жалоба уже учтена' : 'Спасибо, посмотрим'); }
+    catch (e) { setNote(e.message); }
+  };
+
   const grab = async name => {
     setBusy(true);
     try { const r = await takePack(name); setNote(r.ok ? 'Набор добавлен' : (r.why || 'не вышло')); await load(); await openLib(); }
@@ -81,9 +87,12 @@ export function StickerPanel({ onPick, onClose }) {
                 <div key={p.name} className="slib-row">
                   {p.cover ? <img src={p.cover} alt="" /> : <span className="slib-no" />}
                   <div><b>{p.title}</b><small>{p.total} стикеров</small></div>
-                  <button className="mini" disabled={p.mine || busy} onClick={() => grab(p.name)}>
-                    {p.mine ? 'есть' : 'взять'}
-                  </button>
+                  <div className="slib-btns">
+                    <button className="mini" disabled={p.mine || busy} onClick={() => grab(p.name)}>
+                      {p.mine ? 'есть' : 'взять'}
+                    </button>
+                    <button className="mini" onClick={() => complain(p.name)} title="Пожаловаться">!</button>
+                  </div>
                 </div>
               ))}
             </div>

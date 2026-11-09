@@ -1,0 +1,26 @@
+# Пересчёт цифр. Положить в .github/workflows/stats.yml
+name: Цифры
+
+on:
+  schedule:
+    - cron: '40 * * * *'      # раз в час
+  workflow_dispatch:
+
+concurrency:
+  group: stats
+  cancel-in-progress: false
+
+jobs:
+  roll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Пересчитать
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node collector/stats.js

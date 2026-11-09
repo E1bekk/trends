@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { I, Avatar } from './Icons';
 import { fmt, dur, ago, CATS, catName, catEmoji, catColor, tagLabel } from '../lib/format';
-import { getFeed, getMine, getProfile, getNews, getNewsTopics, addCover, delCover } from '../lib/api';
+import { getFeed, getMine, getProfile, getNews, getNewsTopics, addCover, delCover, setBio, deleteMe } from '../lib/api';
 import { pickPhoto } from '../lib/photo';
 import { Shelves } from './Shelves';
+import { Admin } from './Admin';
 import * as St from '../lib/store';
-import { tgUser, openTg, haptic, ask } from '../lib/tg';
+import { tgUser, openTg, haptic, ask, tg } from '../lib/tg';
 
 // ---------- плитка в два столбца ----------
 export function Masonry({ items, onOpen, empty }) {
@@ -164,6 +165,54 @@ function Cover({ covers, onChange }) {
   );
 }
 
+
+// ---------- пара слов о себе ----------
+function Bio({ text, onSave }) {
+  const [edit, setEdit] = useState(false);
+  const [val, setVal] = useState(text || '');
+  useEffect(() => { setVal(text || ''); }, [text]);
+
+  const save = async () => {
+    setEdit(false);
+    try { const r = await setBio(val); onSave(r.bio || ''); } catch (e) {}
+  };
+
+  if (edit) return (
+    <div className="bio-edit">
+      <input value={val} onChange={e => setVal(e.target.value)} placeholder="Пара слов о себе" maxLength={140} autoFocus />
+      <button className="mini grad" onClick={save}>ок</button>
+    </div>
+  );
+  return (
+    <button className={'bio' + (text ? '' : ' empty')} onClick={() => setEdit(true)}>
+      {text || '+ пара слов о себе'}
+    </button>
+  );
+}
+
+// ---------- удаление аккаунта ----------
+function DeleteMe() {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const go = async () => {
+    if (!(await ask('Удалить аккаунт? Пропадут лайки, сохранённое, полки, друзья и переписки.'))) return;
+    if (!(await ask('Точно? Это навсегда, вернуть не получится.'))) return;
+    setBusy(true);
+    try {
+      await deleteMe();
+      if (tg && tg.close) tg.close(); else window.location.reload();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="danger">
+      <button onClick={go} disabled={busy}>{busy ? 'Удаляю…' : 'Удалить аккаунт'}</button>
+      {err && <p className="room-err">{err}</p>}
+    </div>
+  );
+}
+
 // ---------- профиль ----------
 const MY = [['save', 'Сохранённое', '🔖'], ['like', 'Лайки', '❤️'], ['history', 'История', '🕘'], ['shelf', 'Полки', '🗂']];
 export function Profile({ onOpen }) {
@@ -173,6 +222,7 @@ export function Profile({ onOpen }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [srvMe, setSrvMe] = useState(null);
+  const [admin, setAdmin] = useState(false);
   const me = tgUser() || srvMe;
 
   useEffect(() => { getProfile().then(r => { setInfo(r.profile || {}); setSrvMe(r.me || null); }).catch(e => setErr(e.message)); }, []);
@@ -188,6 +238,13 @@ export function Profile({ onOpen }) {
   const mins = Math.round((info?.watch_sec || 0) / 60);
   const level = (info?.seen || 0) > 500 ? ['👑', 'Залипала'] : (info?.seen || 0) > 150 ? ['🔥', 'Свой'] : (info?.seen || 0) > 30 ? ['⚡', 'Втянулся'] : ['🌱', 'Новенький'];
 
+  if (admin) return (
+    <>
+      <div className="back-row"><button className="mini" onClick={() => setAdmin(false)}>← назад в профиль</button></div>
+      <Admin />
+    </>
+  );
+
   if (err) return <div className="page"><Empty emoji="🔌" title="Профиль не загрузился" text={err} />
     <p className="hint">Профиль работает только внутри Telegram — там приложение знает, кто ты.</p></div>;
 
@@ -198,6 +255,7 @@ export function Profile({ onOpen }) {
         <span className="ring big"><Avatar ch={{ avatar: me?.photo, title: me?.name || 'Гость' }} size={78} /></span>
         <b className="pname">{me?.name || 'Гость'}</b>
         <span className="plevel">{level[0]} {level[1]}</span>
+        <Bio text={info?.bio} onSave={b => setInfo(p => ({ ...(p || {}), bio: b }))} />
       </div>
       <div className="pstats">
         <div><b>{fmt(info?.seen || 0)}</b><small>посмотрел</small></div>
@@ -228,6 +286,13 @@ export function Profile({ onOpen }) {
             empty={<Empty emoji={tab === 'save' ? '🔖' : tab === 'like' ? '❤️' : '🕘'}
               title={tab === 'save' ? 'Ничего не сохранено' : tab === 'like' ? 'Пока без лайков' : 'История пустая'}
               text="Листай ленту — тут появится то, что зацепило." />} />}
+
+      {info?.admin && (
+        <div className="danger">
+          <button className="adm" onClick={() => setAdmin(true)}>Админка</button>
+        </div>
+      )}
+      <DeleteMe />
     </div>
   );
 }

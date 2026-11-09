@@ -1,0 +1,26 @@
+# Поиск новых каналов. Положить в .github/workflows/discover.yml
+name: Новые каналы
+
+on:
+  schedule:
+    - cron: '20 3 * * *'      # раз в сутки ночью
+  workflow_dispatch:
+
+concurrency:
+  group: discover
+  cancel-in-progress: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Проверить найденные каналы
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node collector/discover.js

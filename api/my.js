@@ -17,6 +17,22 @@ module.exports = async (req, res) => {
     // подписаться или отписаться
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      // удалить аккаунт: сначала убираем файлы из хранилища, потом все записи
+      if (body.delete_me) {
+        const [u] = await db.select('users', `id=eq.${me.id}&select=covers`) || [];
+        for (const url of (u && Array.isArray(u.covers) ? u.covers : [])) await db.delFile(url);
+        const voices = await db.select('messages', `user_id=eq.${me.id}&kind=eq.voice&select=media_url`).catch(() => []);
+        for (const m of voices || []) if (m.media_url) await db.delFile(m.media_url);
+        await db.rpc('delete_user', { p_user: me.id });
+        return res.status(200).json({ ok: true });
+      }
+
+      // «о себе»
+      if (typeof body.bio === 'string') {
+        const bio = await db.rpc('bio_set', { p_user: me.id, p_text: body.bio });
+        return res.status(200).json({ ok: true, bio: bio || '' });
+      }
+
       // разрешил боту писать — включаем уведомления
       if (body.write !== undefined) {
         await db.rpc('notify_set', { p_user: me.id, p_can: !!body.write, p_want: body.notify === undefined ? null : !!body.notify });
@@ -33,7 +49,11 @@ module.exports = async (req, res) => {
 
     if (q.what === 'profile') {
       const info = await db.rpc('my_profile', { p_user: me.id });
-      return res.status(200).json({ me: { id: me.id, name: me.name, photo: me.photo }, profile: info || {} });
+      const admins = String(process.env.ADMIN_IDS || '').split(/[,\s]+/).map(s2 => Number(s2.trim())).filter(Boolean);
+      return res.status(200).json({
+        me: { id: me.id, name: me.name, photo: me.photo },
+        profile: { ...(info || {}), admin: admins.includes(Number(me.id)) }
+      });
     }
 
     const videos = await db.rpc('my_videos', {

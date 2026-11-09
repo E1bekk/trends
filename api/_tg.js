@@ -41,8 +41,11 @@ function parseChannel(html, username) {
       reacts += tail ? num(tail[1]) : 1;
     }
     const from = unesc(pick(part, /tgme_widget_message_forwarded_from_name[^>]*>([\s\S]*?)<\/a>/)).slice(0, 60);
+    // ссылка на канал-источник: по ней находим новые каналы, которые стоит добавить
+    const fromUser = (pick(part, /tgme_widget_message_forwarded_from_name"[^>]*href="https:\/\/t\.me\/([A-Za-z0-9_]{4,32})/) || '');
     const p = { id: +id, text, views, date, reacts };
     if (from) p.from = from;
+    if (fromUser) p.from_user = fromUser;
     if (src) {
       p.video = src.replace(/&amp;/g, '&');
       p.thumb = pick(part, /tgme_widget_message_video_thumb"[^>]*background-image:url\('([^']+)'/);

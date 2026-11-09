@@ -108,7 +108,18 @@ async function main() {
   try { await db.check(); console.log('база: связь есть'); }
   catch (e) { report(`## ❌ База недоступна\n\n\`\`\`\n${e.message}\n\`\`\``); process.exit(1); }
 
-  const queue = CHANNELS.slice(), loaded = [], errors = [];
+  // к своему списку добавляем каналы, которые приложение нашло само
+  let extra = [];
+  try {
+    const rows = await db.rpc('channels_auto') || [];
+    const have = new Set(CHANNELS.map(c => c.username.toLowerCase()));
+    extra = rows.filter(r => !have.has(String(r.username).toLowerCase()))
+                .map(r => ({ username: r.username, cat: r.cat || 'other', game: r.game || null, pages: r.pages || 2, auto: true }));
+    if (extra.length) console.log(`каналов, найденных самим приложением: ${extra.length}`);
+  } catch (e) { console.log('список найденных каналов недоступен:', e.message); }
+
+  const ALL = CHANNELS.concat(extra);
+  const queue = ALL.slice(), loaded = [], errors = [];
   await Promise.all(Array.from({ length: PARALLEL }, async () => {
     while (queue.length) {
       const cfg = queue.shift();
@@ -118,14 +129,15 @@ async function main() {
   }));
 
   // 2) что удалось скачать — печатаем ДО записи в базу, иначе при сбое записи не видно причины
-  console.log(`каналов скачано ${loaded.length} из ${CHANNELS.length}, за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
+  console.log(`каналов скачано ${loaded.length} из ${ALL.length}, за ${((Date.now() - t0) / 1000).toFixed(1)}с`);
   if (errors.length) console.log(`не ответили ${errors.length}:`, errors.slice(0, 8).join(' | '));
   if (!loaded.length) { report('## ❌ Ни один канал не ответил\n\nПохоже, Telegram не пускает серверы GitHub.'); process.exit(1); }
 
   const authors = loaded.map(({ cfg, channel, reach }) => ({
     username: cfg.username, title: channel.title || cfg.username, avatar: channel.avatar || null,
     subscribers: channel.subscribers || 0, reach, country: cfg.country, cat: cfg.cat,
-    game: cfg.game || null, pages: cfg.pages || 2, active: true, updated_at: new Date().toISOString()
+    game: cfg.game || null, pages: cfg.pages || 2, active: true, updated_at: new Date().toISOString(),
+    ...(cfg.auto ? { auto: true } : {})
   }));
 
   let videos = [], news = [];
@@ -143,12 +155,22 @@ async function main() {
   console.log(`видео записано ${v.rows} (порций ${v.batches})`);
   const nw = news.length ? await db.upsertAll('news', news, 'id') : { rows: 0, batches: 0 };
   console.log(`новостей записано ${nw.rows}`);
+  // 4) откуда репостят наши каналы — складываем в кандидаты на добавление
+  let cands = 0;
+  try {
+    const names = new Set();
+    for (const { posts } of loaded) for (const p of posts) if (p.from_user) names.add(p.from_user);
+    if (names.size) cands = await db.rpc('cand_seen', { p_names: [...names].slice(0, 400), p_from: null }) || 0;
+    console.log(`кандидатов в каналы: ${cands} из ${names.size} упоминаний`);
+  } catch (e) { console.log('кандидаты не записались:', e.message); }
+
   await db.rpc('refresh_scores');
   if (new Date().getUTCHours() === 4) { await db.rpc('cleanup'); await db.rpc('cleanup_news'); await db.rpc('fade_taste'); }
 
-  report(`## ✅ Готово\n\n| | |\n|---|---|\n| каналов | ${loaded.length} из ${CHANNELS.length} |\n` +
+  report(`## ✅ Готово\n\n| | |\n|---|---|\n| каналов | ${loaded.length} из ${ALL.length}${extra.length ? ` (из них найдено самим: ${extra.length})` : ''} |\n` +
     `| авторов записано | ${a.rows} |\n| видео записано | ${v.rows} |\n| новостей записано | ${nw.rows} |\n` +
     `| повторов из разных каналов | ${videos.filter(x => x.spread > 1).length} |\n` +
+    `| новых кандидатов в каналы | ${cands} |\n` +
     `| заняло | ${((Date.now() - t0) / 1000).toFixed(1)}с |`);
 }
 main().catch(e => {
