@@ -1,7 +1,7 @@
 // Что человек делает с роликами: досмотрел, пролистал, лайкнул, сохранил, поделился.
 // Приложение копит события и присылает пачкой раз в несколько секунд.
 const db = require('./_db.js');
-const { who } = require('./_auth.js');
+const { who, whyNot } = require('./_auth.js');
 
 const KINDS = ['watch', 'like', 'save', 'share', 'open'];
 const num = (v, max) => Math.min(max, Math.max(0, Number(v) || 0));
@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'только POST' });
 
   const me = who(req);
-  if (!me) return res.status(401).json({ error: 'нет подписи Telegram' });
+  if (!me) return res.status(401).json({ error: 'Telegram не подтвердил, кто ты: ' + whyNot(req) });
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
   const events = (Array.isArray(body.events) ? body.events : [])

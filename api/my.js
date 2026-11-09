@@ -1,6 +1,6 @@
 // Профиль: сохранённое, лайки, история, цифры и подписка на автора.
 const db = require('./_db.js');
-const { who } = require('./_auth.js');
+const { who, whyNot } = require('./_auth.js');
 
 const KINDS = ['save', 'like', 'history'];
 
@@ -10,7 +10,7 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const me = who(req);
-  if (!me) return res.status(401).json({ error: 'нет подписи Telegram' });
+  if (!me) return res.status(401).json({ error: 'Telegram не подтвердил, кто ты: ' + whyNot(req) });
   const q = req.query || {};
 
   try {

@@ -10,6 +10,9 @@ const FUNCS = [
   ['toggle_follow', null, 'db/my.sql'],                       // меняет данные — только наличие
   ['news_feed',     { p_topic: null, p_country: null, p_limit: 1, p_skip: 0 }, 'db/news.sql'],
   ['news_topics',   {}, 'db/news.sql'],
+  ['comments_of',   { p_video: 'нет/0', p_user: null, p_limit: 1, p_skip: 0 }, 'db/comments.sql'],
+  ['comment_add',   null, 'db/comments.sql'],
+  ['comment_like',  null, 'db/comments.sql'],
   ['bump_video',    null, 'db/schema.sql'],
   ['refresh_scores', null, 'db/schema.sql'],
   ['hit_limit',     null, 'db/schema.sql'],
@@ -17,11 +20,15 @@ const FUNCS = [
 ];
 const TABLES = ['videos', 'authors', 'users', 'news', 'actions', 'seen', 'comments', 'chats', 'messages', 'sticker_packs'];
 
+// Колонку не указываем: у разных таблиц ключ называется по-разному,
+// а запрос несуществующей колонки выглядел бы как отсутствие всей таблицы.
 async function count(table) {
   try {
-    const r = await db.rest(`${table}?select=id&limit=1`, { prefer: 'count=exact' });
-    return Array.isArray(r) ? 'есть' : 'есть';
-  } catch (e) { return /PGRST205|does not exist|404/.test(e.message) ? 'НЕТ ТАБЛИЦЫ' : 'ошибка'; }
+    await db.rest(`${table}?limit=1`);
+    return 'есть';
+  } catch (e) {
+    return /PGRST205|PGRST116|relation .* does not exist|404/.test(e.message) ? 'НЕТ ТАБЛИЦЫ' : 'ошибка: ' + e.message.slice(0, 70);
+  }
 }
 
 module.exports = async (req, res) => {
@@ -33,7 +40,9 @@ module.exports = async (req, res) => {
       SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
       BOT_TOKEN: !!process.env.BOT_TOKEN,
       ADMIN_IDS: !!process.env.ADMIN_IDS,
-      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY
+      GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+      BOT_TOKEN_похож_на_токен: /^\d{6,12}:[A-Za-z0-9_-]{30,}$/.test(process.env.BOT_TOKEN || ''),
+      BOT_TOKEN_номер_бота: String(process.env.BOT_TOKEN || '').split(':')[0] || 'нет'
     },
     база: 'не проверяли', таблицы: {}, функции: {}, надо_выполнить: []
   };
@@ -43,6 +52,10 @@ module.exports = async (req, res) => {
   for (const t of TABLES) out.таблицы[t] = await count(t);
 
   const missing = new Set();
+  for (const [t, v] of Object.entries(out.таблицы)) {
+    if (v !== 'НЕТ ТАБЛИЦЫ') continue;
+    missing.add(t === 'news' ? 'db/news.sql' : 'db/schema.sql');
+  }
   for (const [fn, args, file] of FUNCS) {
     if (args === null) { out.функции[fn] = 'не проверяли (меняет данные)'; continue; }
     try { await db.rpc(fn, args); out.функции[fn] = 'есть'; }

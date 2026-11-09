@@ -1,6 +1,6 @@
 // Комментарии под видео: список, отправка, лайк, удаление своего, жалоба на чужое.
 const db = require('./_db.js');
-const { who } = require('./_auth.js');
+const { who, whyNot } = require('./_auth.js');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method !== 'POST') return res.status(405).json({ error: 'только GET и POST' });
-    if (!me) return res.status(401).json({ error: 'нет подписи Telegram' });
+    if (!me) return res.status(401).json({ error: 'Telegram не подтвердил, кто ты: ' + whyNot(req) });
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
     if (body.like) {
