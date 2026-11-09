@@ -108,4 +108,56 @@ async function check() {
   return true;
 }
 
-module.exports = { ready, check, keyInfo, scrub, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL };
+
+// ---------- хранилище картинок (Supabase Storage) ----------
+// Фото фона профиля лежат в отдельной корзине. Корзину заводим сами при первой загрузке,
+// руками в панели ничего создавать не надо.
+const BUCKET = 'covers';
+let bucketReady = false;
+
+async function storage(path, { method = 'GET', body, type } = {}) {
+  if (!ready()) throw new Error('База не настроена: нет SUPABASE_URL или SUPABASE_SERVICE_KEY');
+  const head = () => ({ apikey: KEY, Authorization: `Bearer ${KEY}`, ...(type ? { 'Content-Type': type } : {}) });
+  let r = await fetch(`${URL}/storage/v1/${path}`, { method, headers: head(), body });
+  if (r.status === 401 || r.status === 403) {
+    // некоторые шлюзы не принимают Authorization с ключами нового образца — пробуем без него
+    const h = head(); delete h.Authorization;
+    r = await fetch(`${URL}/storage/v1/${path}`, { method, headers: h, body });
+  }
+  const text = await r.text();
+  if (!r.ok) throw new Error(`хранилище ${method} ${path} → ${r.status}: ${text.slice(0, 200)}`);
+  return text ? JSON.parse(text) : null;
+}
+
+async function makeBucket() {
+  if (bucketReady) return;
+  try {
+    await storage('bucket', {
+      method: 'POST', type: 'application/json',
+      body: JSON.stringify({ id: BUCKET, name: BUCKET, public: true, file_size_limit: 4000000,
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'] })
+    });
+  } catch (e) {
+    // «уже есть» — это нормально, всё остальное — настоящая ошибка
+    if (!/already exists|Duplicate|409/i.test(e.message)) throw e;
+  }
+  bucketReady = true;
+}
+
+// кладём картинку, получаем постоянную ссылку
+async function putImage(name, buf, type) {
+  await makeBucket();
+  await storage(`object/${BUCKET}/${name}`, { method: 'POST', body: buf, type });
+  return `${URL}/storage/v1/object/public/${BUCKET}/${name}`;
+}
+
+// убираем картинку по её ссылке; чужие ссылки игнорируем
+async function delImage(url) {
+  const mark = `/storage/v1/object/public/${BUCKET}/`;
+  const i = String(url || '').indexOf(mark);
+  if (i < 0) return false;
+  try { await storage(`object/${BUCKET}/${url.slice(i + mark.length)}`, { method: 'DELETE' }); } catch (e) {}
+  return true;
+}
+
+module.exports = { ready, check, keyInfo, scrub, rest, select, insert, upsert, upsertAll, patch, remove, rpc, URL, putImage, delImage };

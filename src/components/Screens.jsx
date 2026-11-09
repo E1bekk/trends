@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { I, Avatar } from './Icons';
 import { fmt, dur, ago, CATS, catName, catEmoji, catColor, tagLabel } from '../lib/format';
-import { getFeed, getMine, getProfile, getNews, getNewsTopics } from '../lib/api';
+import { getFeed, getMine, getProfile, getNews, getNewsTopics, addCover, delCover } from '../lib/api';
+import { pickPhoto } from '../lib/photo';
 import * as St from '../lib/store';
-import { tgUser, openTg } from '../lib/tg';
+import { tgUser, openTg, haptic, ask } from '../lib/tg';
 
 // ---------- плитка в два столбца ----------
 export function Masonry({ items, onOpen, empty }) {
@@ -101,6 +102,65 @@ export function Explore({ onOpen }) {
   );
 }
 
+
+// ---------- фон профиля: свои фото наверху страницы ----------
+function Cover({ covers, onChange }) {
+  const [i, setI] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const has = covers.length > 0;
+
+  const add = async () => {
+    setErr('');
+    try {
+      const photo = await pickPhoto();
+      if (!photo) return;
+      setBusy(true);
+      const r = await addCover(photo);
+      haptic('light');
+      onChange(r.covers || []);
+      setI((r.covers || []).length - 1);
+    } catch (e) { setErr(e.message || 'не вышло загрузить'); }
+    finally { setBusy(false); }
+  };
+
+  const drop = async () => {
+    const url = covers[i];
+    if (!url) return;
+    if (!(await ask('Убрать это фото с фона?'))) return;
+    setBusy(true); setErr('');
+    try { const r = await delCover(url); onChange(r.covers || []); setI(0); }
+    catch (e) { setErr(e.message || 'не вышло убрать'); }
+    finally { setBusy(false); }
+  };
+
+  const track = e => { const w = e.currentTarget.clientWidth || 1; setI(Math.round(e.currentTarget.scrollLeft / w)); };
+
+  return (
+    <div className={'pcover' + (has ? ' has' : '')}>
+      {has
+        ? <div className="cov-strip" onScroll={track}>
+            {covers.map(u => <img key={u} src={u} alt="" decoding="async" />)}
+          </div>
+        : <i className="cov-glow" />}
+      <span className="cov-fade" />
+
+      {covers.length > 1 && <div className="cov-dots">{covers.map((u, k) => <i key={u} className={k === i ? 'on' : ''} />)}</div>}
+
+      {has
+        ? <div className="cov-btns">
+            <button onClick={drop} disabled={busy} aria-label="Убрать это фото">✕</button>
+            <button onClick={add} disabled={busy} aria-label="Добавить фото">{busy ? '·' : '+'}</button>
+          </div>
+        : <button className="cov-add" onClick={add} disabled={busy}>
+            {busy ? 'Загружаю…' : '🖼 Добавить фото на фон'}
+          </button>}
+
+      {err && <span className="cov-err">{err}</span>}
+    </div>
+  );
+}
+
 // ---------- профиль ----------
 const MY = [['save', 'Сохранённое', '🔖'], ['like', 'Лайки', '❤️'], ['history', 'История', '🕘']];
 export function Profile({ onOpen }) {
@@ -129,7 +189,7 @@ export function Profile({ onOpen }) {
 
   return (
     <div className="page">
-      <div className="pcover" />
+      <Cover covers={info?.covers || []} onChange={c => setInfo(p => ({ ...(p || {}), covers: c }))} />
       <div className="phead">
         <span className="ring big"><Avatar ch={{ avatar: me?.photo, title: me?.name || 'Гость' }} size={78} /></span>
         <b className="pname">{me?.name || 'Гость'}</b>

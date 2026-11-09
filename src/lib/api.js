@@ -43,3 +43,8 @@ export const getNewsTopics = () => call('/api/news?what=topics');
 
 export const follow = author =>
   call('/api/my', { method: 'POST', body: JSON.stringify({ follow: author }) });
+
+// фон профиля: свои фото наверху страницы
+export const addCover = photo => call('/api/upload', { method: 'POST', body: JSON.stringify({ photo }) });
+export const delCover = url => call('/api/upload', { method: 'POST', body: JSON.stringify({ del: url }) });
+export const setBio = bio => call('/api/upload', { method: 'POST', body: JSON.stringify({ bio }) });

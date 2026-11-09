@@ -188,9 +188,23 @@ h1, h2, h3 { margin: 0; }
 .post footer span { display: inline-flex; align-items: center; gap: 5px; }
 
 /* профиль */
-.pcover { position: relative; height: 170px; display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; background: var(--aurora); }
-.pcover img { width: 100%; height: 100%; object-fit: cover; filter: blur(10px) saturate(1.5); transform: scale(1.25); opacity: .75; }
-.pcover i { position: absolute; inset: 0; background: linear-gradient(160deg, rgba(139, 92, 255, .45), rgba(255, 61, 129, .25) 50%, var(--bg) 96%); }
+/* фон профиля: свои фото, листаются вбок */
+.pcover { position: relative; height: 188px; overflow: hidden; background: var(--aurora); }
+.pcover.has { background: #0b0b12; }
+.cov-glow { position: absolute; inset: 0; background: linear-gradient(160deg, rgba(139, 92, 255, .5), rgba(255, 61, 129, .3) 50%, var(--bg) 96%); }
+.cov-strip { display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.cov-strip::-webkit-scrollbar { display: none; }
+.cov-strip img { flex: 0 0 100%; width: 100%; height: 100%; object-fit: cover; scroll-snap-align: center; background: var(--s2); }
+.cov-fade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(7, 7, 12, .3) 0, rgba(7, 7, 12, 0) 36%, rgba(7, 7, 12, .5) 74%, var(--bg) 100%); }
+.cov-dots { position: absolute; top: 15px; left: 14px; display: flex; gap: 5px; }
+.cov-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 255, 255, .42); transition: width .2s; }
+.cov-dots i.on { width: 15px; border-radius: 99px; background: #fff; }
+.cov-btns { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; }
+.cov-btns button, .cov-add { color: #fff; background: rgba(10, 10, 16, .45); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, .22); }
+.cov-btns button { width: 34px; height: 34px; border-radius: 50%; font: 800 18px/1 var(--display); }
+.cov-btns button:disabled, .cov-add:disabled { opacity: .55; }
+.cov-add { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); height: 40px; padding: 0 18px; border-radius: 999px; font-size: 14px; font-weight: 800; white-space: nowrap; }
+.cov-err { position: absolute; left: 12px; right: 12px; top: 56%; text-align: center; font-size: 12px; font-weight: 700; color: #ffb4c6; }
 .phead { position: relative; display: grid; justify-items: center; text-align: center; gap: 4px; margin-top: -64px; padding: 0 18px; }
 .phead h1 { font: 800 24px/1.15 var(--display); letter-spacing: -.02em; margin-top: 8px; }
 .level { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6px 10px; width: 100%; max-width: 330px; margin-top: 10px; padding: 10px 14px; border-radius: 18px; background: var(--s1); border: 1px solid var(--line); }

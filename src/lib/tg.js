@@ -42,3 +42,9 @@ export function backButton(on, cb) {
   if (on) { tg.BackButton.show(); tg.BackButton.onClick(cb); } else tg.BackButton.hide();
   return () => { try { tg.BackButton.offClick(cb); } catch (e) {} };
 }
+
+// Спросить «точно?» — руками Telegram, а вне его обычным окном браузера
+export function ask(text) {
+  if (tg && tg.showConfirm) return new Promise(ok => { try { tg.showConfirm(text, v => ok(!!v)); } catch (e) { ok(window.confirm(text)); } });
+  return Promise.resolve(window.confirm(text));
+}
