@@ -8,6 +8,7 @@ import { I, Avatar } from './Icons';
 import { fmt, catName, catEmoji, catColor } from '../lib/format';
 import * as St from '../lib/store';
 import { createPrefetcher } from '../lib/prefetch';
+import Comments from './Comments';
 import { share, haptic, backButton } from '../lib/tg';
 
 let soundOK = false;
@@ -27,7 +28,7 @@ const ahead = () => {
 };
 const hasScrollEnd = typeof window !== 'undefined' && 'onscrollend' in window;
 
-const Slide = memo(function Slide({ v, blob, active, warm, withVideo, preload, liked, saved, follow, onBroken, onReady, tick, rate, setRate, paused: pausedOutside }) {
+const Slide = memo(function Slide({ v, blob, active, warm, withVideo, preload, liked, saved, follow, onBroken, onReady, onComments, tick, rate, setRate, paused: pausedOutside }) {
   const ref = useRef(null), bar = useRef(null);
   const [src, setSrc] = useState(blob || v.video_url);
   const started = useRef(false), activeRef = useRef(active), warmed = useRef(false);
@@ -123,6 +124,8 @@ const Slide = memo(function Slide({ v, blob, active, warm, withVideo, preload, l
         </div>
         <button className={'rail-btn' + (liked ? ' on-like' : '')} onClick={() => { St.toggleLike(v); haptic(); }}>
           <span className="rail-ic"><I.heart fill={liked} /></span><span>{fmt(shown.likes || 0)}</span></button>
+        <button className="rail-btn" onClick={() => { onComments(v); haptic(); }}>
+          <span className="rail-ic"><I.comment /></span><span>{fmt(shown.comments || 0)}</span></button>
         <button className={'rail-btn' + (saved ? ' on-save' : '')} onClick={() => { St.toggleSave(v); haptic(); }}>
           <span className="rail-ic"><I.bookmark fill={saved} /></span><span>{fmt(shown.saves || 0)}</span></button>
         <button className="rail-btn" onClick={() => { St.shared(v); share(`${v.author}/${v.id.split('/')[1]}`, (v.caption || '').split('\n')[0].slice(0, 80)); }}>
@@ -152,6 +155,8 @@ export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, 
   const setRate = useCallback(r => { speed = r; setRateState(r); }, []);
   const [, force] = useState(0);
   const [pickVibe, setPickVibe] = useState(false);
+  const [sheet, setSheet] = useState(null);          // открытые комментарии
+  const openComments = useCallback(v => setSheet(v), []);
   const watch = useRef({ id: null, max: 0, last: 0, total: 0, v: null });
   const S = useRef({}); S.current = { list, active, onNeedMore };
   const [, setLoaded] = useState(0);
@@ -240,6 +245,8 @@ export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, 
         ) : <span className="feed-side" />}
       </div>
 
+      {sheet && <Comments video={sheet} onClose={() => setSheet(null)} onCount={d => St.bumpComments(sheet, d)} />}
+
       {pickVibe && vibes && (
         <div className="vibe-row">
           <button className={!vibe ? 'on' : ''} onClick={() => { onVibe(''); setPickVibe(false); }}>✨ Всё</button>
@@ -256,8 +263,8 @@ export default function Feed({ list, onNeedMore, loading, embedded, tabs, mode, 
             if (d < -1 || d > 3) return <Blank key={v.id} />;
             return <Slide key={v.id} v={v} blob={P.get(v.id)} active={d === 0} warm={(d === 1 || d === 2) && curReady}
               withVideo={d >= -1 && d <= 2} preload={d === 0 || d === 1 ? 'auto' : 'metadata'}
-              liked={St.isLiked(v)} saved={St.isSaved(v)} follow={St.isFollowing(v)}
-              rate={rate} setRate={setRate} paused={paused}
+              liked={St.isLiked(v)} saved={St.isSaved(v)} follow={St.isFollowing(v)} onComments={openComments}
+              rate={rate} setRate={setRate} paused={paused || !!sheet}
               onBroken={onBroken} onReady={onReady} tick={tick} />;
           })}
         </div>

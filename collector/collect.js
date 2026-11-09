@@ -2,7 +2,7 @@
 // Обходит каналы-источники, чистит подписи от рекламы, размечает видео по смыслу,
 // склеивает одинаковые репосты и складывает всё в базу. Пул видео растёт сам.
 const { parseChannel } = require('../api/_tg.js');
-const { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey } = require('../api/_clean.js');
+const { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey, cut, topicOf } = require('../api/_clean.js');
 const db = require('../api/_db.js');
 const CHANNELS = require('../api/_channels.js');
 const fs = require('fs');
@@ -42,6 +42,33 @@ async function loadChannel(cfg) {
   const views = posts.map(p => p.views).filter(Boolean).sort((a, b) => a - b);
   const reach = views.length ? views[Math.floor(views.length / 2)] : 0;
   return { cfg, channel, posts, reach };
+}
+
+// Новости: только текстовые посты новостных каналов, складываем отдельно от видео
+function toNewsRows({ cfg, posts }) {
+  if (cfg.cat !== 'news') return [];
+  const rows = [];
+  for (const p of posts.slice().sort((a, b) => b.id - a.id)) {
+    const text = String(p.text || '').trim();
+    if (text.length < 60 || p.video) continue;
+    if (cleanCaption(text).length < 40) continue;            // осталась одна реклама
+    const lines = text.split('\n').map(x => x.trim()).filter(Boolean);
+    if (rows.length >= 25) break;
+    rows.push({
+      id: `${cfg.username}/${p.id}`,
+      author: cfg.username,
+      post_id: p.id,
+      title: cut(lines[0] || text, 140),
+      body: cut(text, 600),
+      photo: p.photo || null,
+      topic: topicOf(text),
+      country: cfg.country,
+      lang: detectLang(text, cfg.country === 'uz' ? 'uz' : cfg.country === 'kz' ? 'kk' : cfg.country === 'kg' ? 'ky' : 'ru'),
+      tg_views: p.views || 0,
+      posted_at: p.date || null
+    });
+  }
+  return rows;
 }
 
 function toVideoRows({ cfg, channel, posts }) {
@@ -101,8 +128,8 @@ async function main() {
     game: cfg.game || null, pages: cfg.pages || 2, active: true, updated_at: new Date().toISOString()
   }));
 
-  let videos = [];
-  for (const item of loaded) videos = videos.concat(toVideoRows(item));
+  let videos = [], news = [];
+  for (const item of loaded) { videos = videos.concat(toVideoRows(item)); news = news.concat(toNewsRows(item)); }
 
   // один и тот же ролик часто висит в нескольких каналах — считаем, в скольких
   const spread = {};
@@ -114,11 +141,13 @@ async function main() {
   console.log(`авторов записано ${a.rows} (порций ${a.batches})`);
   const v = await db.upsertAll('videos', videos, 'id');
   console.log(`видео записано ${v.rows} (порций ${v.batches})`);
+  const nw = news.length ? await db.upsertAll('news', news, 'id') : { rows: 0, batches: 0 };
+  console.log(`новостей записано ${nw.rows}`);
   await db.rpc('refresh_scores');
-  if (new Date().getUTCHours() === 4) await db.rpc('cleanup');    // уборка раз в сутки
+  if (new Date().getUTCHours() === 4) { await db.rpc('cleanup'); await db.rpc('cleanup_news'); await db.rpc('fade_taste'); }
 
   report(`## ✅ Готово\n\n| | |\n|---|---|\n| каналов | ${loaded.length} из ${CHANNELS.length} |\n` +
-    `| авторов записано | ${a.rows} |\n| видео записано | ${v.rows} |\n` +
+    `| авторов записано | ${a.rows} |\n| видео записано | ${v.rows} |\n| новостей записано | ${nw.rows} |\n` +
     `| повторов из разных каналов | ${videos.filter(x => x.spread > 1).length} |\n` +
     `| заняло | ${((Date.now() - t0) / 1000).toFixed(1)}с |`);
 }

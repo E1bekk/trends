@@ -109,4 +109,28 @@ function dupKey(duration, ratio, caption) {
   return words ? `${shape}:${words}` : `${shape}:~`;
 }
 
-module.exports = { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey, cut, DICT };
+// ---------- тема новости ----------
+// Простые правила по словам: для ленты новостей этого достаточно,
+// и работает одинаково для русского, узбекского и киргизского.
+const TOPICS = [
+  ['proisshestviya', ['дтп','авари','пожар','погиб','постради','земletryas','землетряс','наводнен','взрыв','спас','скончал','разбил','сби­л','сбил','утонул','происшеств','halok','yong']],
+  ['vlast',   ['президент','жапаров','мирзиёев','токаев','парламент','министр','правительств','депутат','указ','закон','кабмин','госдум','премьер','prezident','hukumat']],
+  ['dengi',   ['курс','сом','тенге','сум','рубл','доллар','цен','подорожа','подешев','налог','бюджет','банк','инфляц','зарплат','тариф','pul','narx']],
+  ['sport',   ['матч','гол','сборн','чемпион','турнир','медал','олимп','бокс','футбол','борьб','куреш','sport','musobaqa']],
+  ['obshestvo',['школ','студент','больниц','врач','дорог','жител','город','село','вода','свет','отключ','погод','снег','мороз','жар','транспорт','автобус','маktab','shifoxona']],
+  ['mir',     ['сша','китай','россия','украин','европ','оон','трамп','путин','санкц','войн','переговор','визит','саммит']],
+];
+const TOPIC_RU = { proisshestviya: ['Происшествия','🚨'], vlast: ['Власть','🏛'], dengi: ['Деньги','💰'],
+  sport: ['Спорт','⚽'], obshestvo: ['Общество','🏙'], mir: ['В мире','🌍'], other: ['Разное','📰'] };
+
+function topicOf(text) {
+  const t = ' ' + String(text || '').toLowerCase().replace(/ё/g, 'е') + ' ';
+  let best = 'other', hits = 0;
+  for (const [topic, words] of TOPICS) {
+    const n = words.reduce((a, w) => a + (t.includes(w) ? 1 : 0), 0);
+    if (n > hits) { hits = n; best = topic; }
+  }
+  return best;
+}
+
+module.exports = { cleanCaption, isPromoOnly, tagsFor, detectLang, dupKey, cut, topicOf, TOPIC_RU, DICT };

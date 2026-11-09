@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { I } from './components/Icons';
 import Feed from './components/Feed';
-import { Explore, Profile } from './components/Screens';
+import { Explore, News, Profile } from './components/Screens';
 import { getFeed } from './lib/api';
 import { CATS } from './lib/format';
 import * as St from './lib/store';
@@ -77,14 +77,15 @@ export default function App() {
 
       {!onFeed && (
         <main key={nav} className="screen">
-          {nav === 'explore'
-            ? <Explore onOpen={openList} />
+          {nav === 'explore' ? <Explore onOpen={openList} />
+            : nav === 'news' ? <News />
             : <Profile onOpen={openList} />}
         </main>
       )}
 
-      <nav className="tabbar tabbar-3">
+      <nav className="tabbar">
         <button className={onFeed ? 'on' : ''} onClick={() => go('feed')}><I.home /><span>Лента</span></button>
+        <button className={nav === 'news' ? 'on' : ''} onClick={() => go('news')}><I.news /><span>Новости</span></button>
         <button className={'tab-center' + (nav === 'explore' ? ' on' : '')} onClick={() => go('explore')} aria-label="Обзор">
           <span><I.compass width="26" height="26" /></span><small>Обзор</small></button>
         <button className={nav === 'profile' ? 'on' : ''} onClick={() => go('profile')}><I.user /><span>Профиль</span></button>

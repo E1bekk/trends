@@ -1,10 +1,10 @@
 // Два экрана: Обзор (подборки и поиск по темам) и Профиль (своё).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { I, Avatar } from './Icons';
-import { fmt, dur, CATS, catName, catEmoji, catColor, tagLabel } from '../lib/format';
-import { getFeed, getMine, getProfile } from '../lib/api';
+import { fmt, dur, ago, CATS, catName, catEmoji, catColor, tagLabel } from '../lib/format';
+import { getFeed, getMine, getProfile, getNews, getNewsTopics } from '../lib/api';
 import * as St from '../lib/store';
-import { tgUser } from '../lib/tg';
+import { tgUser, openTg } from '../lib/tg';
 
 // ---------- плитка в два столбца ----------
 export function Masonry({ items, onOpen, empty }) {
@@ -162,6 +162,68 @@ export function Profile({ onOpen }) {
             empty={<Empty emoji={tab === 'save' ? '🔖' : tab === 'like' ? '❤️' : '🕘'}
               title={tab === 'save' ? 'Ничего не сохранено' : tab === 'like' ? 'Пока без лайков' : 'История пустая'}
               text="Листай ленту — тут появится то, что зацепило." />} />}
+    </div>
+  );
+}
+
+// ---------- новости ----------
+const TOPIC = { proisshestviya: ['Происшествия', '🚨'], vlast: ['Власть', '🏛'], dengi: ['Деньги', '💰'],
+  sport: ['Спорт', '⚽'], obshestvo: ['Общество', '🏙'], mir: ['В мире', '🌍'], other: ['Разное', '📰'] };
+
+function NewsCard({ n }) {
+  const [open, setOpen] = useState(false);
+  const [name, em] = TOPIC[n.topic] || TOPIC.other;
+  const long = (n.body || '').length > 180;
+  return (
+    <article className="ncard">
+      {n.photo && <img className="nphoto" src={n.photo} alt="" loading="lazy" decoding="async" />}
+      <div className="nbody">
+        <div className="nmeta"><span className="ntopic">{em} {name}</span><span>{ago(n.posted_at)}</span></div>
+        <b className="ntitle">{n.title}</b>
+        {n.body && n.body !== n.title && (
+          <p className={'ntext' + (open ? ' open' : '')} onClick={() => long && setOpen(!open)}>{n.body}</p>
+        )}
+        {long && <button className="nmore" onClick={() => setOpen(!open)}>{open ? 'Свернуть' : 'Читать дальше'}</button>}
+        <div className="nfoot">
+          <span className="nsrc">{n.author_title}</span>
+          <button className="nopen" onClick={() => openTg(`${n.author}/${n.id.split('/')[1]}`)}>
+            Источник<I.external width="13" height="13" /></button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export function News() {
+  const [topic, setTopic] = useState('');
+  const [topics, setTopics] = useState([]);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { getNewsTopics().then(r => setTopics(r.topics || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    let gone = false; setLoading(true);
+    getNews({ topic, limit: 40 })
+      .then(r => { if (!gone) { setItems(r.news || []); setLoading(false); } })
+      .catch(() => { if (!gone) setLoading(false); });
+    return () => { gone = true; };
+  }, [topic]);
+
+  return (
+    <div className="page">
+      <header className="top"><div className="brand"><span className="logo">S</span><span className="word">новости</span></div></header>
+      <div className="chips">
+        <button className={'chip' + (!topic ? ' on' : '')} onClick={() => setTopic('')}>📰 Всё</button>
+        {topics.map(t => {
+          const [name, em] = TOPIC[t.topic] || TOPIC.other;
+          return <button key={t.topic} className={'chip' + (topic === t.topic ? ' on' : '')} onClick={() => setTopic(t.topic)}>{em} {name}</button>;
+        })}
+      </div>
+      {loading
+        ? <div className="nlist">{[0, 1, 2].map(i => <span key={i} className="sk sk-news" />)}</div>
+        : items.length
+          ? <div className="nlist">{items.map(n => <NewsCard key={n.id} n={n} />)}</div>
+          : <Empty emoji="📰" title="Новостей пока нет" text="Они появятся, когда сборщик обойдёт каналы." />}
     </div>
   );
 }

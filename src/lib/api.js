@@ -28,5 +28,18 @@ export const getMine = ({ kind = 'save', limit = 30, skip = 0 } = {}) =>
 
 export const getProfile = () => call('/api/my?what=profile');
 
+export const getComments = v => call(`/api/comments?v=${encodeURIComponent(v)}`);
+export const addComment = (v, text, reply) =>
+  call('/api/comments', { method: 'POST', body: JSON.stringify({ v, text, reply }) });
+export const likeComment = id => call('/api/comments', { method: 'POST', body: JSON.stringify({ like: id }) });
+export const removeComment = id => call('/api/comments', { method: 'POST', body: JSON.stringify({ remove: id }) });
+export const reportComment = (id, reason) =>
+  call('/api/comments', { method: 'POST', body: JSON.stringify({ report: id, reason }) });
+
+export const getNews = ({ topic = '', limit = 30, skip = 0 } = {}) =>
+  call(`/api/news?limit=${limit}&skip=${skip}${topic ? '&topic=' + topic : ''}`);
+
+export const getNewsTopics = () => call('/api/news?what=topics');
+
 export const follow = author =>
   call('/api/my', { method: 'POST', body: JSON.stringify({ follow: author }) });

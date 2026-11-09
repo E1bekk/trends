@@ -55,6 +55,7 @@ export function toggleSave(v) {
   return on;
 }
 export function shared(v) { push({ v: v.id, kind: 'share' }); }
+export function bumpComments(v, d) { setPatch(v, { comments: Math.max(0, (withPatch(v).comments || 0) + d) }); }
 
 // подписка на автора: тоже сначала на экране, потом на сервере
 const follows = new Map();
